@@ -519,8 +519,11 @@ export function RoleTruthWorkspace() {
               </ul>
             )}
             <button
+              type="button"
               className="rt-button rt-button--analyze"
               onClick={runLiveCapture}
+              aria-busy={runState === "running" || isStaging}
+              aria-describedby={liveStatus ? "rt-live-status" : undefined}
               disabled={
                 solariState !== "ready" ||
                 runState === "running" ||
@@ -533,14 +536,17 @@ export function RoleTruthWorkspace() {
               ) : (
                 <ScanText aria-hidden="true" size={16} />
               )}
-              {isStaging
-                ? "Preparing screenshots…"
-                : runState === "running"
-                  ? "Analyzing evidence…"
-                  : "Analyze evidence"}
+              <span>
+                {isStaging
+                  ? "Preparing screenshots…"
+                  : runState === "running"
+                    ? "Analyzing evidence…"
+                    : "Analyze evidence"}
+              </span>
             </button>
             {liveStatus && (
               <p
+                id="rt-live-status"
                 className={`rt-live-status rt-live-status--${runState}`}
                 role="status"
                 aria-live="polite"
@@ -624,41 +630,53 @@ export function RoleTruthWorkspace() {
           aria-busy={runState === "running"}
         >
           {runState === "running" && (
-            <div className="rt-run-banner rt-run-banner--running">
+            <div
+              className="rt-run-banner rt-run-banner--running"
+              role="status"
+              aria-live="polite"
+            >
               <LoaderCircle className="rt-spin" aria-hidden="true" size={18} />
-              <div>
-                <strong>Building a new evidence report</strong>
-                <span>Browser capture → screenshot OCR → Sandbox verification</span>
+              <div className="rt-run-banner__copy">
+                <strong className="rt-run-banner__title">
+                  Building a new evidence report
+                </strong>
+                <p className="rt-run-banner__detail">
+                  Browser capture → screenshot OCR → Sandbox verification
+                </p>
               </div>
             </div>
           )}
           {runState === "error" && (
             <div className="rt-run-banner rt-run-banner--error" role="alert">
               <AlertTriangle aria-hidden="true" size={18} />
-              <div>
-                <strong>The new analysis failed</strong>
-                <span>
+              <div className="rt-run-banner__copy">
+                <strong className="rt-run-banner__title">
+                  The new analysis failed
+                </strong>
+                <p className="rt-run-banner__detail">
                   No new report was created. The reproducible demo is shown
                   below; review the intake error and retry.
-                </span>
+                </p>
               </div>
             </div>
           )}
           {liveReport && liveReport.analysisStatus !== "complete" && (
             <div
               className={`rt-run-banner rt-run-banner--${liveReport.analysisStatus}`}
+              role="status"
+              aria-live="polite"
             >
               <AlertTriangle aria-hidden="true" size={18} />
-              <div>
-                <strong>
+              <div className="rt-run-banner__copy">
+                <strong className="rt-run-banner__title">
                   {liveReport.analysisStatus === "partial"
                     ? "Partial evidence report"
                     : "No usable job posting found"}
                 </strong>
-                <span>
+                <p className="rt-run-banner__detail">
                   {liveReport.diagnostics?.[0] ??
                     "Review source diagnostics before relying on this report."}
-                </span>
+                </p>
               </div>
             </div>
           )}

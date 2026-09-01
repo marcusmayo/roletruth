@@ -6,7 +6,9 @@ preview_log_file="/tmp/roletruth-preview.log"
 preview_signature_file="/tmp/roletruth-preview.signature"
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lockfile_signature="$(sha256sum "${project_root}/package-lock.json" | cut -c1-12)"
-preview_signature="next-solari-node-v3-${lockfile_signature}"
+source_signature="$(git -C "$project_root" rev-parse --short=12 HEAD 2>/dev/null || printf 'no-git')"
+config_signature="$(sha256sum "${project_root}/next.config.ts" | cut -c1-12)"
+preview_signature="next-solari-node-v4-${lockfile_signature}-${source_signature}-${config_signature}"
 expected_configured=false
 
 command -v setsid >/dev/null || {

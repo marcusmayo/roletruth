@@ -30,13 +30,14 @@ after(async () => {
 });
 
 async function pipelineModules() {
-  const [quality, extractor, intake, reconcile] = await Promise.all([
+  const [quality, extractor, intake, reconcile, securityHeaders] = await Promise.all([
     vite.ssrLoadModule("/lib/source-quality.ts"),
     vite.ssrLoadModule("/lib/job-extractor.ts"),
     vite.ssrLoadModule("/lib/evidence-intake.ts"),
     vite.ssrLoadModule("/lib/solari-reconcile-script.ts"),
+    vite.ssrLoadModule("/lib/security-headers.ts"),
   ]);
-  return { quality, extractor, intake, reconcile };
+  return { quality, extractor, intake, reconcile, securityHeaders };
 }
 
 function usableCapture(sealedText, overrides = {}) {
@@ -76,13 +77,43 @@ test("source classifier rejects the exact Glassdoor bot-detection redirect", asy
     title: "Just a moment...",
     heading: "Security check",
     text: "Just a moment... Checking your browser before accessing Glassdoor.",
-    httpStatus: 200,
+    httpStatus: 401,
   });
 
   assert.equal(assessment.acquisitionStatus, "blocked");
   assert.equal(assessment.documentType, "unknown");
   assert.equal(assessment.eligibleForRoleTerms, false);
   assert.match(assessment.diagnostics.join(" "), /bot challenge|access-denied/i);
+});
+
+test("source classifier keeps a plain HTTP 401 as authentication-required", async () => {
+  const { quality } = await pipelineModules();
+  const assessment = quality.assessSource({
+    kind: "url",
+    requestedUrl: "https://jobs.example.com/private-role",
+    finalUrl: "https://jobs.example.com/private-role",
+    title: "Authentication required",
+    text: "This job posting requires an authenticated account before it can be viewed.",
+    httpStatus: 401,
+  });
+
+  assert.equal(assessment.acquisitionStatus, "auth_required");
+  assert.equal(assessment.documentType, "unknown");
+  assert.equal(assessment.eligibleForRoleTerms, false);
+  assert.match(assessment.diagnostics.join(" "), /401|authentication/i);
+});
+
+test("CSP enables React development diagnostics without weakening production", async () => {
+  const { securityHeaders } = await pipelineModules();
+  const development = securityHeaders.buildContentSecurityPolicy("development");
+  const production = securityHeaders.buildContentSecurityPolicy("production");
+
+  assert.match(development, /script-src[^;]*'unsafe-eval'/);
+  assert.match(development, /connect-src[^;]*ws: wss:/);
+  assert.doesNotMatch(production, /'unsafe-eval'/);
+  assert.doesNotMatch(production, /connect-src[^;]*\bws:/);
+  assert.match(production, /object-src 'none'/);
+  assert.match(production, /frame-ancestors 'none'/);
 });
 
 test("source classifier distinguishes authentication walls from bot challenges", async () => {

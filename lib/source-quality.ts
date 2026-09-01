@@ -109,6 +109,27 @@ export function assessSource(input: SourceAssessmentInput): SourceAssessment {
   const searchable = `${title}\n${(input.heading ?? "").toLowerCase()}\n${text.toLowerCase()}`;
   const diagnostics: string[] = [];
 
+  const hasBlockedSignals =
+    includesAny(finalUrl, BLOCKED_URL_MARKERS) ||
+    BLOCKED_TITLES.some(
+      (marker) => title === marker || title.startsWith(`${marker} |`),
+    ) ||
+    includesAny(title, BLOCKED_TEXT_MARKERS) ||
+    includesAny(searchable, BLOCKED_TEXT_MARKERS);
+
+  // A challenge page can itself return 401. Strong, explicit challenge
+  // markers describe the captured evidence more accurately than status alone.
+  if (hasBlockedSignals) {
+    return {
+      acquisitionStatus: "blocked",
+      documentType: "unknown",
+      eligibleForRoleTerms: false,
+      diagnostics: [
+        "A bot challenge or access-denied page was captured instead of the requested evidence.",
+      ],
+    };
+  }
+
   if (input.httpStatus === 401) {
     return {
       acquisitionStatus: "auth_required",
@@ -136,24 +157,6 @@ export function assessSource(input: SourceAssessmentInput): SourceAssessment {
       eligibleForRoleTerms: false,
       diagnostics: [
         `The source returned HTTP ${input.httpStatus}; its error page was excluded from role evidence.`,
-      ],
-    };
-  }
-
-  if (
-    includesAny(finalUrl, BLOCKED_URL_MARKERS) ||
-    BLOCKED_TITLES.some(
-      (marker) => title === marker || title.startsWith(`${marker} |`),
-    ) ||
-    includesAny(title, BLOCKED_TEXT_MARKERS) ||
-    includesAny(searchable, BLOCKED_TEXT_MARKERS)
-  ) {
-    return {
-      acquisitionStatus: "blocked",
-      documentType: "unknown",
-      eligibleForRoleTerms: false,
-      diagnostics: [
-        "A bot challenge or access-denied page was captured instead of the requested evidence.",
       ],
     };
   }
