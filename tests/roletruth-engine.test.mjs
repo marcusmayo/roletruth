@@ -135,7 +135,7 @@ test("Solari launch defaults stay compatible with the Free plan", async () => {
   assert.equal("webBotAuth" in options, false);
 });
 
-test("paid Solari browser features require an exact opt-in", async () => {
+test("advanced Solari browser features require an exact opt-in", async () => {
   const { buildSolariLaunchOptions } = await vite.ssrLoadModule(
     "/lib/solari-launch-options.ts",
   );
