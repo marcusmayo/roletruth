@@ -1,0 +1,40 @@
+name: RoleTruth field test
+description: Report whether RoleTruth clarified a real job decision.
+title: "[Field test] "
+labels: ["field-test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include private recruiter messages, names, credentials, or personal data. Describe the source mix and outcome at a high level.
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Did the report change or clarify a decision?
+      options:
+        - Yes
+        - Partly
+        - No
+    validations:
+      required: true
+  - type: checkboxes
+    id: sources
+    attributes:
+      label: Source types tested
+      options:
+        - label: Public job listing
+        - label: Screenshot
+        - label: Recruiter clarification
+        - label: Company careers page
+  - type: textarea
+    id: useful
+    attributes:
+      label: What was useful?
+      description: Focus on the decision or missing term RoleTruth surfaced.
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: What was wrong, unclear, or missing?
+      description: Please redact identifying information.

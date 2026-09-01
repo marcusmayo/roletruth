@@ -1,0 +1,128 @@
+{
+  "id": "rt-solari-hiring-golden",
+  "engineVersion": "0.1.0",
+  "createdAt": "2026-09-01T19:35:39Z",
+  "mode": "demo-local",
+  "sourceManifest": [
+    {
+      "id": "src-hiring-post",
+      "label": "Original hiring post",
+      "authority": "direct",
+      "sha256": "64a3d144af91d453e6ec1dbdf727151605a7fe41b44af6b946cd9430e82f771f"
+    },
+    {
+      "id": "src-faq",
+      "label": "Direct role FAQ",
+      "authority": "direct",
+      "sha256": "894139cd2010a03c5c71321fe234860005618dd16a3ee62111425191f0285366"
+    },
+    {
+      "id": "src-use-case",
+      "label": "Use-case guidance",
+      "authority": "direct",
+      "sha256": "4fdb569407408bb9c374ce56b75b8606ac82e4b981d9dd74243ab8d4b3eb088c"
+    },
+    {
+      "id": "src-comp-context",
+      "label": "Compensation clarification",
+      "authority": "direct",
+      "sha256": "2a7e37caf7c3845f565130ab229f867dfd48c78f0919a5ac56c25282937bc406"
+    }
+  ],
+  "findings": [
+    {
+      "field": "role_title",
+      "status": "confirmed",
+      "conclusion": "SWE intern",
+      "evidenceIds": ["ev-role"],
+      "ruleId": "RT-R1"
+    },
+    {
+      "field": "work_mode",
+      "status": "confirmed",
+      "conclusion": "Remote",
+      "evidenceIds": ["ev-remote"],
+      "ruleId": "RT-R1"
+    },
+    {
+      "field": "relocation_required",
+      "status": "confirmed",
+      "conclusion": "Not required",
+      "evidenceIds": ["ev-remote"],
+      "ruleId": "RT-R1"
+    },
+    {
+      "field": "compensation_basis",
+      "status": "confirmed",
+      "conclusion": "$300,000 annualized",
+      "evidenceIds": ["ev-compensation"],
+      "ruleId": "RT-R1"
+    },
+    {
+      "field": "three_month_full_time_scenario",
+      "status": "calculated",
+      "conclusion": "$75,000",
+      "evidenceIds": ["ev-compensation"],
+      "ruleId": "RT-C1"
+    },
+    {
+      "field": "actual_paid_total",
+      "status": "unknown",
+      "conclusion": "Not established",
+      "evidenceIds": ["ev-pay-context"],
+      "ruleId": "RT-R3"
+    },
+    {
+      "field": "duration",
+      "status": "unknown",
+      "conclusion": "Not established",
+      "evidenceIds": ["ev-pay-context"],
+      "ruleId": "RT-R3"
+    },
+    {
+      "field": "employment_type",
+      "status": "unknown",
+      "conclusion": "Not established",
+      "evidenceIds": [],
+      "ruleId": "RT-R3"
+    },
+    {
+      "field": "application_materials",
+      "status": "confirmed",
+      "conclusion": "Résumé, cover letter, and grades not requested",
+      "evidenceIds": ["ev-materials"],
+      "ruleId": "RT-R1"
+    },
+    {
+      "field": "application_steps",
+      "status": "confirmed",
+      "conclusion": "Fork → build → publish → post + tag",
+      "evidenceIds": ["ev-steps"],
+      "ruleId": "RT-R1"
+    },
+    {
+      "field": "deadline",
+      "status": "confirmed",
+      "conclusion": "No fixed deadline",
+      "evidenceIds": ["ev-deadline"],
+      "ruleId": "RT-R1"
+    },
+    {
+      "field": "evaluation_signal",
+      "status": "confirmed",
+      "conclusion": "A genuine problem and evidence people want it",
+      "evidenceIds": ["ev-use-case"],
+      "ruleId": "RT-R1"
+    }
+  ],
+  "calculation": {
+    "formula": "$300,000 / year × 3 / 12 × 1.0 FTE",
+    "result": "$75,000",
+    "classification": "derived scenario, not quoted payout"
+  },
+  "runtime": {
+    "browserSessionId": null,
+    "sandboxId": null,
+    "sandboxExitCode": null
+  }
+}
