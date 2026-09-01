@@ -2,6 +2,7 @@ import type { BrowserSession, LaunchOptions } from "@solarisdk/browser";
 import type { Sandbox } from "@solarisdk/sdk";
 
 import { sha256Hex, type RoleTruthReport } from "@/lib/roletruth-engine";
+import { buildSolariLaunchOptions } from "@/lib/solari-launch-options";
 import { SOLARI_RECONCILE_SCRIPT } from "@/lib/solari-reconcile-script";
 import { validatePublicUrl } from "@/lib/url-security";
 
@@ -57,13 +58,7 @@ export async function POST(request: Request) {
       timeoutMs: 60_000,
       maxAttempts: 2,
     });
-    browser = await browserClient.launch({
-      recording: true,
-      stealth: true,
-      webBotAuth: true,
-      retries: 1,
-      probe: true,
-    });
+    browser = await browserClient.launch(buildSolariLaunchOptions());
 
     const captures = [];
     for (const requestedUrl of urls) {

@@ -121,3 +121,37 @@ test("URL guard rejects local, private, metadata, credential and unsafe targets"
     assert.throws(() => validatePublicUrl(value), undefined, value);
   }
 });
+
+test("Solari launch defaults stay compatible with the Free plan", async () => {
+  const { buildSolariLaunchOptions } = await vite.ssrLoadModule(
+    "/lib/solari-launch-options.ts",
+  );
+  const options = buildSolariLaunchOptions({});
+
+  assert.equal(options.recording, true);
+  assert.equal(options.probe, true);
+  assert.equal(options.retries, 1);
+  assert.equal("stealth" in options, false);
+  assert.equal("webBotAuth" in options, false);
+});
+
+test("paid Solari browser features require an exact opt-in", async () => {
+  const { buildSolariLaunchOptions } = await vite.ssrLoadModule(
+    "/lib/solari-launch-options.ts",
+  );
+
+  assert.equal(
+    buildSolariLaunchOptions({ SOLARI_BROWSER_STEALTH: "true" }).stealth,
+    true,
+  );
+  assert.equal(
+    buildSolariLaunchOptions({ SOLARI_BROWSER_WEB_BOT_AUTH: "true" })
+      .webBotAuth,
+    true,
+  );
+  assert.equal(
+    "stealth" in
+      buildSolariLaunchOptions({ SOLARI_BROWSER_STEALTH: "TRUE" }),
+    false,
+  );
+});

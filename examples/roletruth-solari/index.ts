@@ -2,6 +2,7 @@ import { Solari } from "@solarisdk/browser";
 import { SolariClient } from "@solarisdk/sdk";
 
 import { sha256Hex, type RoleTruthReport } from "../../lib/roletruth-engine.ts";
+import { buildSolariLaunchOptions } from "../../lib/solari-launch-options.ts";
 import { SOLARI_RECONCILE_SCRIPT } from "../../lib/solari-reconcile-script.ts";
 import { validatePublicUrl } from "../../lib/url-security.ts";
 
@@ -22,11 +23,7 @@ let sandbox: Awaited<
 > | null = null;
 
 try {
-  browser = await browserClient.launch({
-    recording: true,
-    stealth: true,
-    webBotAuth: true,
-  });
+  browser = await browserClient.launch(buildSolariLaunchOptions());
   const page = await browser.newPage();
   await page.goto(requestedUrl, {
     waitUntil: "domcontentloaded",

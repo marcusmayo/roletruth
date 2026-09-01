@@ -6,7 +6,7 @@ preview_log_file="/tmp/roletruth-preview.log"
 preview_signature_file="/tmp/roletruth-preview.signature"
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lockfile_signature="$(sha256sum "${project_root}/package-lock.json" | cut -c1-12)"
-preview_signature="next-solari-node-v2-${lockfile_signature}"
+preview_signature="next-solari-node-v3-${lockfile_signature}"
 expected_configured=false
 
 command -v setsid >/dev/null || {

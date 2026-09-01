@@ -286,7 +286,7 @@ export function RoleTruthWorkspace() {
                 className={`rt-key-state rt-key-state--${solariState}`}
                 title={
                   solariState === "ready"
-                    ? "SOLARI_API_KEY is configured server-side"
+                    ? "SOLARI_API_KEY is present server-side; plan capabilities are checked when a run starts"
                     : "Add SOLARI_API_KEY to enable live acquisition"
                 }
               >
@@ -297,7 +297,7 @@ export function RoleTruthWorkspace() {
                 ) : (
                   <KeyRound size={14} />
                 )}
-                {solariState === "ready" ? "Ready" : "Key needed"}
+                {solariState === "ready" ? "Key detected" : "Key needed"}
               </span>
             </div>
             <label className="rt-field-label" htmlFor="source-url">

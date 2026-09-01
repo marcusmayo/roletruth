@@ -147,7 +147,17 @@ staging, questions, and JSON export work without a key.
    The expected results are `Codespaces secret: present` and
    `{"configured":true}`. If they differ, run
    `bash scripts/start-codespaces-preview.sh` to replace the stale preview.
-5. Paste a public job URL into **Acquire with Solari** and run it.
+5. First test with `https://github.com/marcusmayo/roletruth` in **Acquire with
+   Solari**. This isolates Browser and Sandbox access from a target site's bot
+   defenses.
+
+RoleTruth defaults to a recorded standard Browser session compatible with the
+[Solari Free plan](https://docs.getsolari.com/pricing). Free retains browser
+replays for one day. Leave
+`SOLARI_BROWSER_STEALTH` unset on Free; stealth is available on Starter and
+higher. For an upgraded account and a defended target such as LinkedIn, set
+`SOLARI_BROWSER_STEALTH=true`. Web Bot Auth remains off unless
+`SOLARI_BROWSER_WEB_BOT_AUTH=true` is explicitly configured.
 
 Codespaces deliberately uses the Node-based Next.js development server. The
 Solari Browser client includes Node runtime assets that cannot execute inside
@@ -157,7 +167,7 @@ For the smallest end-to-end proof without the frontend:
 
 ```bash
 export SOLARI_API_KEY=slr_live_your_key
-npm run roletruth:solari -- https://example.com/job-post
+npm run roletruth:solari -- https://github.com/marcusmayo/roletruth
 ```
 
 The standalone example is in
@@ -184,7 +194,7 @@ npm run typecheck
 npm test
 ```
 
-Current committed verification target: **9 tests**, lint clean, typecheck clean,
+Current committed verification target: **11 tests**, lint clean, typecheck clean,
 production build clean, and zero high-severity production dependency findings.
 CI repeats that gate on every push and pull request.
 
