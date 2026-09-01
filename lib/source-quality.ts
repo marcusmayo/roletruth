@@ -3,6 +3,8 @@ export type AcquisitionStatus =
   | "blocked"
   | "auth_required"
   | "not_job"
+  | "irrelevant"
+  | "duplicate"
   | "empty"
   | "error";
 

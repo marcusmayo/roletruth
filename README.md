@@ -14,26 +14,39 @@ source span behind every accepted conclusion, and labels derived math so a
 scenario cannot masquerade as quoted compensation.
 
 > The reviewed hiring-post demo works without credentials. A server-side
-> `SOLARI_API_KEY` is required to analyze any new URL or screenshot because the
-> live flow finishes by verifying and reconciling the evidence in a Solari
-> Sandbox.
+> `SOLARI_API_KEY` is required to analyze any new URL or screenshot. A URL-only
+> run uses a recorded Solari Browser to search for matching public sources,
+> captures the underlying pages, and finishes by verifying and reconciling the
+> sealed evidence in a Solari Sandbox.
 
 ![RoleTruth evidence matrix](docs/roletruth-solari-preview.jpg)
 
 ## What a live analysis does
 
-The visible frontend supports two live intake shapes:
+The visible frontend supports three live intake shapes:
 
+- **URL only:** enter one exact job-post URL. RoleTruth inspects its structured
+  data, URL slug, and stable job ID; runs bounded public-web searches in the
+  same Solari Browser session; and captures matching alternate sources.
 - **URL + screenshots:** enter a public job-post URL, attach supporting
-  screenshots if useful, then select **Analyze evidence**.
+  screenshots if useful, then select **Search & reconcile evidence**.
 - **Screenshot only:** leave the URL blank, attach one or more job-post or
-  recruiter-message screenshots, then select **Analyze evidence**.
+  recruiter-message screenshots, then select **Search & reconcile evidence**.
 
-For URL sources, a standard recorded Solari Browser captures the final URL,
-HTTP status, page title, first heading, visible body text, full-page image, and
-any schema.org `JobPosting` JSON-LD. For screenshot sources, the Node server
-runs English OCR with Tesseract.js. The deterministic extractor then proposes
-candidate fields such as company, role, location, work mode, compensation,
+Solari does not expose a separate search endpoint. RoleTruth uses its standard
+recorded Browser as the search executor: it opens a public search provider,
+screens result links, and then opens the selected underlying pages. Search
+titles and snippets are discovery leads only and can never support a finding.
+For each submitted or discovered URL, the Browser captures the final URL, HTTP
+status, page title, first heading, visible body text, full-page image, and any
+schema.org `JobPosting` JSON-LD. For screenshot sources, the Node server runs
+English OCR with Tesseract.js.
+
+Before a discovered page becomes eligible, it must match the starting opening
+by stable job ID or by strict role-and-company identity. Different openings,
+multi-job result pages, duplicate content, blocked pages, and company-only
+context remain visible but cannot vote. The deterministic extractor then
+proposes fields such as company, role, location, work mode, compensation,
 employment type, experience, education, duration, materials, and deadline.
 
 Every source image and text receipt is uploaded to an ephemeral Solari Sandbox.
@@ -47,10 +60,10 @@ not displayed until the new run completes.
 
 ```mermaid
 flowchart LR
-  A["URL and/or screenshots"] --> B["Acquire + OCR"]
-  B --> C["Classify source quality"]
-  C --> D["Solari Sandbox<br/>rehash + verify quotes"]
-  D --> E["Dynamic evidence report"]
+  A["Job URL"] --> B["Inspect + bounded search"]
+  B --> C["Solari capture + identity gate"]
+  C --> D["Sandbox rehash + verify quotes"]
+  D --> E["Multi-source reconciliation"]
 ```
 
 ## Source quality is part of the result
@@ -64,6 +77,8 @@ RoleTruth does not treat every rendered page as job evidence.
 | **Sign-in required** | The source redirected to an authentication or account wall | Excluded; add screenshots or a public direct source |
 | **Company context** | The page describes the employer rather than a specific opening | Company may be retained as context; role terms are excluded |
 | **Not a job post** | No reliable job-post structure or role-description signals were found | Excluded from role conclusions |
+| **Different opening** | A discovered page does not match the same role/company or stable job ID | Retained as a rejected lead; never merged |
+| **Duplicate** | The sealed text is identical to an already captured usable source | Excluded so mirrors do not become extra votes |
 | **Unreadable** | The page or OCR output did not contain enough readable text | Excluded and surfaced for replacement |
 | **Failed** | Browser acquisition, OCR, or integrity verification failed | Excluded with a diagnostic |
 
@@ -116,8 +131,9 @@ not evidence that every live page or screenshot can be extracted.
 ## Why Solari is material
 
 - **Solari Browser** renders public URL sources, records the session, follows
-  redirects, captures page text and a full-page image, and exposes structured
-  `JobPosting` data when the page publishes it.
+  redirects, executes bounded public-web searches, captures candidate page text
+  and full-page images, and exposes structured `JobPosting` data when a page
+  publishes it.
 - **Solari Sandbox** receives the actual captured/uploaded image bytes plus the
   sealed text manifest, verifies their SHA-256 receipts, rejects unsupported
   quote proposals, and runs the deterministic reconciler in isolation.
@@ -127,12 +143,18 @@ not claim a multimodal semantic model or universal extraction. The extractor
 can propose evidence, but only the Sandbox verifier can admit an exact span and
 only the reconciler can assign a verdict.
 
+The discovery workflow is agentic but deliberately bounded. Solari supplies
+the Browser and Sandbox infrastructure, not an LLM or dedicated search API.
+With only `SOLARI_API_KEY`, RoleTruth deterministically creates at most three
+identity-preserving queries and captures at most four discovered candidates.
+An optional model is not required and no model output is treated as evidence.
+
 ### Two honest execution modes
 
 | Mode | Credentials | What it proves |
 |---|---|---|
 | **Reproducible demo** | None | Reviewed source manifest, exact spans, deterministic verdicts, conflict mutation, compensation math, report export |
-| **Solari live** | `SOLARI_API_KEY` | Dynamic URL and/or screenshot intake, Browser receipts when a URL is present, OCR, source-quality classification, Sandbox integrity verification, and live findings |
+| **Solari live** | `SOLARI_API_KEY` | URL-only discovery, dynamic URL and/or screenshot intake, Browser receipts, OCR, identity and source-quality gates, Sandbox integrity verification, and live multi-source findings |
 
 Signed replay, CDP, WebSocket, and file capability URLs are not exported.
 
@@ -186,8 +208,12 @@ rules.
    `bash scripts/start-codespaces-preview.sh` again.
 4. For a screenshot-only run, leave the URL blank, attach a screenshot of the
    actual job listing or recruiter message, and select **Analyze evidence**.
-5. For a combined run, enter the actual public job-post URL, add any supporting
-   screenshots, and select **Analyze evidence** once.
+5. For a URL-only run, enter the exact job-post URL and select **Search &
+   reconcile evidence**. Screenshots are optional. The **Evidence ledger**
+   exposes every query, screened/captured count, discovered source, identity
+   match, and exclusion reason.
+6. For a combined run, enter the actual job-post URL, add supporting
+   screenshots, and select **Search & reconcile evidence** once.
 
 The web UI accepts one URL plus screenshots. The API supports at most three
 URLs, eight total sources, 6 MB per screenshot, and 20 MB of screenshot data per
@@ -212,11 +238,12 @@ maximum sessions, and one-day browser replay retention. Free does not include
 stealth, proxies, or captcha solving.
 
 Leave `SOLARI_BROWSER_STEALTH` unset on Free. A defended source such as
-Glassdoor or LinkedIn may return a bot challenge or sign-in wall; RoleTruth
-must label that source **Blocked** or **Sign-in required**, exclude it from role
-conclusions, and direct the user to upload screenshots or provide an accessible
-employer listing. Solari recommends stealth for defended sites, while standard
-mode is intended for ordinary public pages. See
+Glassdoor or LinkedIn may return a bot challenge or sign-in wall. RoleTruth
+labels that starting source **Blocked** or **Sign-in required**, then continues
+bounded discovery for public employer or mirror pages. If it cannot prove the
+same job identity, it abstains and asks for the exact role or a listing
+screenshot. Solari recommends stealth for defended sites, while standard mode
+is intended for ordinary public pages and search. See
 [Solari stealth guidance](https://docs.getsolari.com/stealth).
 
 On an entitled plan, stealth remains an explicit operator choice:
@@ -248,6 +275,18 @@ unsupported field types can remain Unknown. A company profile may identify the
 company but cannot establish the terms of an opening. A screenshot of a company
 overview is therefore not a substitute for the job listing.
 
+## Reconciliation lineage
+
+RoleTruth ports the useful operating patterns from
+[`marcusmayo/keel-core`](https://github.com/marcusmayo/keel-core) rather than
+depending on an unfinished external service: exact reference first,
+deterministic normalization, source-tagged assertions, duplicate exclusion,
+collision abstention, and provenance recorded at decision time. Discovery can
+propose pages; it cannot mutate the evidence graph or decide a claim. The
+Sandbox reconciliation remains deterministic and preserves incompatible values
+as **Conflicted** instead of letting authority or search rank silently choose a
+winner.
+
 ## Verification and pressure-test evidence
 
 The automated gate is:
@@ -259,8 +298,8 @@ npm run typecheck
 npm test
 ```
 
-The current gate passes **52 tests**, including **41 dynamic adversarial
-tests** in `tests/dynamic-pipeline.test.mjs`. The supplied NIFCO screenshot was
+The gate includes dynamic adversarial discovery, extraction, integrity,
+reconciliation, and rendered-interface tests. The supplied NIFCO screenshot was
 also exercised through real Tesseract OCR (86% confidence), source
 classification, extraction, and the same Python verifier used in the Sandbox:
 it correctly returns `insufficient`, confirms `NIFCO America Corp` as company
@@ -278,6 +317,7 @@ credentialed release gate:
 | Screenshot-only actual job post | OCR text yields source-linked findings and image/text hashes verify in Sandbox | **OCR/verifier pass; remote Sandbox rerun required** |
 | URL plus supporting screenshot | Both sources appear in one report and compatible claims reconcile | **Automated pipeline pass; credentialed combined run required** |
 | Defended Glassdoor URL | Bot-detection redirect is labeled Blocked and never treated as eligible evidence | **Exact captured-redirect regression passes; live rerun recommended** |
+| URL-only evidence discovery | Queries are bounded; exact job identity is required; snippets are ineligible; duplicates cannot add votes | **Automated discovery and reconciliation tests pass; credentialed live run required** |
 | Company-overview screenshot | Company context may be retained, but no role terms are confirmed | **Actual supplied NIFCO screenshot passes locally** |
 | Contradictory URL and screenshot | Verified incompatible values become Conflicted with both spans visible | **Automated verifier pass; live visual run required** |
 | Invalid/private input | Private URLs, invalid image signatures, oversize files, and excessive source counts are rejected | **Automated pass** |
@@ -293,8 +333,10 @@ the evidence for a hiring demonstration; implementation alone is not proof.
   not merely staged locally and should not contain unrelated personal data.
 - The browser preview for an uploaded screenshot remains a local object URL;
   the API response does not publish a file-capability URL.
-- Live URL input accepts public HTTP/HTTPS only and rejects credentials,
-  localhost, private IPv4, IPv6 local ranges, and metadata targets.
+- Live URL input accepts public HTTP/HTTPS on ports 80/443 only and rejects
+  credentials, localhost, private/loopback/link-local/carrier-grade IPv4,
+  local IPv6 ranges, and metadata targets. The same checks run on Browser
+  requests and discovered URLs.
 - File count, aggregate size, per-file size, and PNG/JPEG/WebP signatures are
   validated server-side.
 - Browser, navigation, OCR, Sandbox, and command operations have bounded

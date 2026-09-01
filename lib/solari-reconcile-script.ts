@@ -140,6 +140,10 @@ for index, capture in enumerate(captures, start=1):
         "httpStatus": capture.get("httpStatus"),
         "textLength": len(sealed_text),
         "ocrConfidence": capture.get("ocrConfidence"),
+        "origin": capture.get("origin"),
+        "discoveredVia": capture.get("discoveredVia"),
+        "searchRank": capture.get("searchRank"),
+        "identityMatch": capture.get("identityMatch"),
     }
     if capture.get("requestedUrl"):
         source["requestedUrl"] = capture["requestedUrl"]
@@ -254,7 +258,7 @@ source_fingerprint = "".join(sorted(item.get("sha256") or "" for item in sources
 report_suffix = hashlib.sha256(source_fingerprint.encode("utf-8")).hexdigest()[:12]
 report = {
     "id": f"rt-live-{report_suffix}",
-    "engineVersion": "0.2.0-sandbox",
+    "engineVersion": "0.3.0-discovery-sandbox",
     "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "mode": "solari-live",
     "analysisStatus": analysis_status,

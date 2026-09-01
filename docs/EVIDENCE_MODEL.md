@@ -6,28 +6,34 @@ The live path is deterministic; it does not use an LLM to assign verdicts.
 
 ## Pipeline
 
-1. **Acquire:** Solari Browser renders a public URL, or the Node server receives
-   screenshot bytes and runs English OCR.
-2. **Classify:** RoleTruth labels each source `usable`, `blocked`,
-   `auth_required`, `not_job`, `empty`, or `error`, and identifies its document
-   type when possible.
-3. **Seal:** The server hashes the image bytes and sealed text. Both artifacts
+1. **Identify:** RoleTruth derives a bounded subject fingerprint from the
+   submitted URL and captured evidence: stable job ID first, then strict role
+   and company identity.
+2. **Discover:** A recorded Solari Browser executes at most three public-web
+   queries and screens result links. Search titles/snippets are leads only.
+3. **Acquire:** Solari Browser opens submitted and selected discovered pages;
+   the Node server receives screenshot bytes and runs English OCR.
+4. **Classify:** RoleTruth labels each source `usable`, `blocked`,
+   `auth_required`, `not_job`, `irrelevant`, `duplicate`, `empty`, or `error`,
+   and identifies its document type when possible.
+5. **Seal:** The server hashes the image bytes and sealed text. Both artifacts
    are uploaded to a temporary Solari Sandbox.
-4. **Propose:** Bounded JSON-LD and English-text extractors propose atomic
+6. **Propose:** Bounded JSON-LD and English-text extractors propose atomic
    assertions with a raw value, normalized value, display value, and exact
    source quote.
-5. **Verify:** The Sandbox recomputes the hashes, proves that the quote occurs
+7. **Verify:** The Sandbox recomputes the hashes, proves that the quote occurs
    in the sealed text, proves the raw phrase occurs in the quote, and applies
    field-specific value checks for safety-critical work-mode and relocation
    claims.
-6. **Reconcile:** Compatible verified values become Confirmed, incompatible
+8. **Reconcile:** Compatible verified values become Confirmed, incompatible
    values become Conflicted, and missing or ineligible evidence stays Unknown.
 
 ## Entities
 
 | Entity | Purpose | Integrity and provenance fields |
 |---|---|---|
-| Source | One captured URL, uploaded screenshot, or explicit test fixture | requested/final URL, channel, publisher, authority, HTTP/acquisition state, document type, capture time, image/text SHA-256, Browser session, OCR confidence |
+| Discovery query | A bounded lead-generation action, never evidence | query ID, sanitized query, reason, provider, screened/accepted counts |
+| Source | One captured URL, uploaded screenshot, or explicit test fixture | origin, discovery query/rank, subject match, requested/final URL, channel, publisher, authority, HTTP/acquisition state, document type, capture time, image/text SHA-256, Browser session, OCR confidence |
 | Evidence span | Exact sealed text eligible to support one or more claims | source ID, quote, character/source location, eligibility |
 | Assertion | A bounded extractor proposal from a span | field, raw value, normalized value, display value, evidence ID |
 | Finding | The deterministic verdict for one atomic field | status, conclusion, evidence IDs, rule ID, explanation, clarification question |
@@ -46,6 +52,8 @@ provenance mechanism establishes more.
 | `blocked` | No | Bot challenge or access denial remains visible with diagnostics |
 | `auth_required` | No | Sign-in/account wall remains visible; use a public source or screenshot fallback |
 | `not_job` | No for role terms | A recognized company profile may support `company_name` context only |
+| `irrelevant` | No | A discovered page could not be tied to the same opening |
+| `duplicate` | No | Identical sealed content cannot add another corroborating vote |
 | `empty` | No | Unreadable or insufficient text remains Unknown |
 | `error` | No | HTTP, acquisition, OCR, or integrity failure remains visible and excluded |
 

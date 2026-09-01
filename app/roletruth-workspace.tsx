@@ -92,12 +92,33 @@ function sourceStateLabel(source: EvidenceSource) {
       return source.documentType === "company_profile"
         ? "Company context"
         : "Not a job post";
+    case "irrelevant":
+      return "Different opening";
+    case "duplicate":
+      return "Duplicate";
     case "empty":
       return "Unreadable";
     case "error":
       return "Failed";
     default:
       return "Reviewed";
+  }
+}
+
+function sourceOriginLabel(source: EvidenceSource) {
+  switch (source.origin) {
+    case "submitted":
+      return "Submitted";
+    case "discovered":
+      return source.discoveredVia
+        ? `Discovered · ${source.discoveredVia}`
+        : "Discovered";
+    case "uploaded":
+      return "Uploaded";
+    case "synthetic":
+      return "Test only";
+    default:
+      return null;
   }
 }
 
@@ -150,6 +171,9 @@ export function RoleTruthWorkspace() {
     (source) =>
       source.acquisitionStatus === undefined ||
       source.acquisitionStatus === "usable",
+  ).length;
+  const discoveredSources = report.sources.filter(
+    (source) => source.origin === "discovered",
   ).length;
 
   useEffect(() => {
@@ -284,7 +308,9 @@ export function RoleTruthWorkspace() {
     setLiveReport(null);
     setRunState("running");
     setLiveStatus(
-      "Acquiring URLs, OCRing screenshots, and verifying exact evidence in Solari Sandbox…",
+      url.trim()
+        ? "Inspecting the job URL, searching for matching public evidence, and preparing Solari verification…"
+        : "OCRing screenshots and preparing exact evidence for Solari Sandbox verification…",
     );
     try {
       const form = new FormData();
@@ -325,7 +351,7 @@ export function RoleTruthWorkspace() {
       setRunState("complete");
       setLiveStatus(
         hydratedReport.analysisStatus === "insufficient"
-          ? "No usable job posting was found. Review the source diagnostics and add the actual listing or role screenshot."
+          ? "No exact public match was established. Review the discovery trace or add the role title and a listing screenshot."
           : hydratedReport.analysisStatus === "partial"
             ? "Partial analysis complete. Usable evidence was reconciled; blocked or irrelevant sources remain visibly excluded."
             : "Evidence analysis complete. Every conclusion is linked to a verified source span.",
@@ -389,7 +415,9 @@ export function RoleTruthWorkspace() {
           </span>
           <span className="rt-topbar-divider" />
           <span>
-            {usableSources}/{report.sources.length} usable sources
+            {liveReport && discoveredSources > 0
+              ? `${discoveredSources} discovered · ${usableSources}/${report.sources.length} usable`
+              : `${usableSources}/${report.sources.length} usable sources`}
           </span>
         </div>
 
@@ -413,11 +441,11 @@ export function RoleTruthWorkspace() {
       <div className="rt-workspace">
         <aside className="rt-intake" aria-label="Evidence intake">
           <section className="rt-panel-section rt-intake-intro">
-            <div className="rt-eyebrow">Evidence intake</div>
+            <div className="rt-eyebrow">Evidence investigation</div>
             <h1>What does the role actually say?</h1>
             <p>
-              Reconcile direct sources into traceable decisions. Ambiguity stays
-              visible.
+              Start with one job URL. The discovery agent finds matching public
+              sources; Solari captures them; conflicts stay visible.
             </p>
             <button
               className="rt-button rt-button--primary"
@@ -432,8 +460,8 @@ export function RoleTruthWorkspace() {
           <section className="rt-panel-section" aria-labelledby="live-source">
             <div className="rt-section-heading">
               <div>
-                <div className="rt-kicker">Live source</div>
-                <h2 id="live-source">Acquire with Solari</h2>
+                <div className="rt-kicker">URL-only discovery</div>
+                <h2 id="live-source">Search with Solari Browser</h2>
               </div>
               <span
                 className={`rt-key-state rt-key-state--${solariState}`}
@@ -454,7 +482,7 @@ export function RoleTruthWorkspace() {
               </span>
             </div>
             <label className="rt-field-label" htmlFor="source-url">
-              Public job-post URL
+              Job-post URL
             </label>
             <div className="rt-url-row">
               <input
@@ -487,8 +515,8 @@ export function RoleTruthWorkspace() {
             >
               <Upload aria-hidden="true" size={17} />
               <span>
-                <strong>Stage screenshots</strong>
-                <small>PNG, JPG or WebP · up to 8 sources</small>
+                <strong>Add supporting screenshots</strong>
+                <small>Optional · PNG, JPG or WebP</small>
               </span>
             </button>
             <p className="rt-upload-privacy">
@@ -541,7 +569,7 @@ export function RoleTruthWorkspace() {
                   ? "Preparing screenshots…"
                   : runState === "running"
                     ? "Analyzing evidence…"
-                    : "Analyze evidence"}
+                    : "Search & reconcile evidence"}
               </span>
             </button>
             {liveStatus && (
@@ -599,7 +627,10 @@ export function RoleTruthWorkspace() {
                   <span className="rt-source-copy">
                     <strong>{source.label}</strong>
                     <small>
-                      {source.author} · {sourceStateLabel(source)}
+                      {sourceOriginLabel(source)
+                        ? `${sourceOriginLabel(source)} · `
+                        : ""}
+                      {sourceStateLabel(source)}
                     </small>
                   </span>
                   {source.acquisitionStatus === undefined ||
@@ -641,7 +672,7 @@ export function RoleTruthWorkspace() {
                   Building a new evidence report
                 </strong>
                 <p className="rt-run-banner__detail">
-                  Browser capture → screenshot OCR → Sandbox verification
+                  Inspect URL → discover matches → capture sources → Sandbox reconciliation
                 </p>
               </div>
             </div>
@@ -802,6 +833,52 @@ export function RoleTruthWorkspace() {
 
           {view === "evidence" && (
             <div className="rt-ledger">
+              {report.discovery && (
+                <section className="rt-discovery-trace" aria-labelledby="discovery-trace-title">
+                  <div className="rt-discovery-trace__header">
+                    <div>
+                      <div className="rt-kicker">Agent provenance</div>
+                      <h3 id="discovery-trace-title">Discovery trace</h3>
+                    </div>
+                    <span>
+                      {report.discovery.candidatesScreened} screened · {report.discovery.candidatesCaptured} captured
+                    </span>
+                  </div>
+                  <p>
+                    Search results are leads only. A page becomes evidence only
+                    after Solari opens it and the Sandbox verifies its sealed
+                    text and image.
+                  </p>
+                  <dl className="rt-discovery-identity">
+                    <div>
+                      <dt>Role</dt>
+                      <dd>{report.discovery.identity.roleTitle ?? "Not identified"}</dd>
+                    </div>
+                    <div>
+                      <dt>Company</dt>
+                      <dd>{report.discovery.identity.companyName ?? "Not identified"}</dd>
+                    </div>
+                    <div>
+                      <dt>Job ID</dt>
+                      <dd>{report.discovery.identity.jobId ?? "Not identified"}</dd>
+                    </div>
+                  </dl>
+                  <ol className="rt-query-list">
+                    {report.discovery.queries.map((query) => (
+                      <li key={query.id}>
+                        <span>{query.id}</span>
+                        <div>
+                          <code>{query.query}</code>
+                          <small>
+                            {query.reason} {query.provider ?? "No provider succeeded"} · {query.resultsScreened} screened · {query.candidatesAccepted} candidates
+                          </small>
+                          {query.diagnostic && <em>{query.diagnostic}</em>}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              )}
               {report.sources.map((source, index) => {
                 const sourceEvidence = report.evidence.filter(
                   (span) => span.sourceId === source.id,
@@ -822,6 +899,9 @@ export function RoleTruthWorkspace() {
                         <div>
                           <h3>{source.label}</h3>
                           <p>
+                            {sourceOriginLabel(source)
+                              ? `${sourceOriginLabel(source)} · `
+                              : ""}
                             {source.author} · {source.publisher} ·{" "}
                             {sourceStateLabel(source)}
                           </p>
@@ -864,6 +944,21 @@ export function RoleTruthWorkspace() {
                             </dd>
                           </div>
                         )}
+                        {source.discoveredVia && (
+                          <div>
+                            <dt>Discovered via</dt>
+                            <dd>
+                              {source.discoveredVia}
+                              {source.searchRank ? ` · result ${source.searchRank}` : ""}
+                            </dd>
+                          </div>
+                        )}
+                        {source.identityMatch && (
+                          <div>
+                            <dt>Identity match</dt>
+                            <dd>{source.identityMatch.replaceAll("-", " ")}</dd>
+                          </div>
+                        )}
                         {source.finalUrl &&
                           source.finalUrl !== source.requestedUrl && (
                             <div>
@@ -894,26 +989,26 @@ export function RoleTruthWorkspace() {
                   {
                     number: "01",
                     Icon: Globe2,
-                    title: "Acquire",
-                    text: "Solari Browser renders public sources, records the session, and captures final URL, text, screenshot, and time.",
+                    title: "Discover",
+                    text: "A bounded search agent uses the submitted job identity to find candidate public sources. Search snippets remain ineligible leads.",
                   },
                   {
                     number: "02",
-                    Icon: Fingerprint,
-                    title: "Seal",
-                    text: "Every source receives a SHA-256 digest. Exact text spans remain attached to their source.",
+                    Icon: Globe2,
+                    title: "Acquire",
+                    text: "Solari Browser opens submitted and discovered pages, records the session, and captures final URL, text, screenshot, and time.",
                   },
                   {
                     number: "03",
-                    Icon: TerminalSquare,
-                    title: "Reconcile",
-                    text: "Common role terms and JobPosting data become candidate assertions. Solari Sandbox verifies each exact quote before deterministic rules assign a verdict.",
+                    Icon: Fingerprint,
+                    title: "Seal",
+                    text: "Every captured source receives SHA-256 receipts. Duplicates, unrelated openings, and inaccessible pages cannot vote.",
                   },
                   {
                     number: "04",
-                    Icon: ShieldCheck,
-                    title: "Abstain",
-                    text: "Explicit compatible evidence confirms. Incompatibility conflicts. Missing or ambiguous evidence stays unknown.",
+                    Icon: TerminalSquare,
+                    title: "Reconcile",
+                    text: "Solari Sandbox verifies exact quotes. Compatible claims confirm, differing claims conflict, and ambiguous or missing evidence stays unknown.",
                   },
                 ].map(({ number, Icon, title, text }) => (
                   <article key={number}>

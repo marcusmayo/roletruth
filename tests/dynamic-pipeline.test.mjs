@@ -30,14 +30,16 @@ after(async () => {
 });
 
 async function pipelineModules() {
-  const [quality, extractor, intake, reconcile, securityHeaders] = await Promise.all([
+  const [quality, extractor, intake, reconcile, securityHeaders, discovery, urlSecurity] = await Promise.all([
     vite.ssrLoadModule("/lib/source-quality.ts"),
     vite.ssrLoadModule("/lib/job-extractor.ts"),
     vite.ssrLoadModule("/lib/evidence-intake.ts"),
     vite.ssrLoadModule("/lib/solari-reconcile-script.ts"),
     vite.ssrLoadModule("/lib/security-headers.ts"),
+    vite.ssrLoadModule("/lib/evidence-discovery.ts"),
+    vite.ssrLoadModule("/lib/url-security.ts"),
   ]);
-  return { quality, extractor, intake, reconcile, securityHeaders };
+  return { quality, extractor, intake, reconcile, securityHeaders, discovery, urlSecurity };
 }
 
 function usableCapture(sealedText, overrides = {}) {
@@ -970,4 +972,188 @@ test("word/digit experience and W2/W-2 spellings remain compatible across source
   assert.equal(employment.status, "confirmed");
   assert.equal(employment.conclusion, "W-2 contract");
   assert.equal(employment.evidenceIds.length, 2);
+});
+
+test("URL-only discovery strips secrets while preserving a stable job ID", async () => {
+  const { discovery } = await pipelineModules();
+  const sanitized = discovery.sanitizeJobUrlForSearch(
+    "https://jobs.example.com/openings/product-manager?jobId=884211&utm_source=email&access_token=secret&candidate_email=person%40example.com#apply",
+  );
+  const parsed = new URL(sanitized);
+
+  assert.equal(parsed.searchParams.get("jobId"), "884211");
+  assert.equal(parsed.searchParams.has("utm_source"), false);
+  assert.equal(parsed.searchParams.has("access_token"), false);
+  assert.equal(parsed.searchParams.has("candidate_email"), false);
+  assert.equal(parsed.hash, "");
+  assert.equal(discovery.extractStableJobId(sanitized), "884211");
+});
+
+test("a company overview never broadens discovery into unrelated openings", async () => {
+  const { discovery } = await pipelineModules();
+  const capture = usableCapture("NIFCO America Corp\nCompany overview", {
+    requestedUrl:
+      "https://www.glassdoor.com/Overview/Working-at-NIFCO-America-Corp-EI_IE282512.11,29.htm",
+    finalUrl:
+      "https://www.glassdoor.com/Overview/Working-at-NIFCO-America-Corp-EI_IE282512.11,29.htm",
+    acquisitionStatus: "not_job",
+    documentType: "company_profile",
+    eligibleForRoleTerms: false,
+    candidateAssertions: [
+      candidate(
+        "company_name",
+        "NIFCO America Corp",
+        "nifco-america-corp",
+        "NIFCO America Corp",
+      ),
+    ],
+  });
+  const seed = discovery.buildDiscoverySeed([capture]);
+  const queries = discovery.buildDiscoveryQueries(seed);
+
+  assert.equal(seed.roleTitle, null);
+  assert.equal(seed.jobId, null);
+  assert.equal(seed.companyName, "NIFCO America Corp");
+  assert.equal(queries.length, 1);
+  assert.match(queries[0].query, /glassdoor\.com\/Overview/);
+  assert.doesNotMatch(queries[0].query, /^"NIFCO America Corp" job$/);
+});
+
+test("search candidates must match the same role and company before capture", async () => {
+  const { discovery } = await pipelineModules();
+  const seed = {
+    startingUrl: "https://jobs.example.com/roles/senior-product-manager",
+    safeStartingUrl: "https://jobs.example.com/roles/senior-product-manager",
+    sourceHost: "jobs.example.com",
+    roleTitle: "Senior Product Manager",
+    companyName: "Northstar Systems",
+    jobId: null,
+  };
+  const ranked = discovery.rankSearchCandidates(
+    [
+      {
+        href: "https://boards.greenhouse.io/northstar/jobs/90001",
+        title: "Senior Product Manager - Northstar Systems",
+        snippet: "Northstar Systems is hiring a Senior Product Manager.",
+      },
+      {
+        href: "https://boards.greenhouse.io/northstar/jobs/90002",
+        title: "Senior Finance Manager - Northstar Systems",
+        snippet: "Northstar Systems is hiring a Senior Finance Manager.",
+      },
+      {
+        href: "https://malicious.example/job/senior-product-manager",
+        title: "Senior Product Manager",
+        snippet: "A fabricated mirror with no employer identity.",
+      },
+    ],
+    "Q02",
+    seed,
+    [seed.startingUrl],
+  );
+
+  assert.equal(ranked.length, 1);
+  assert.equal(ranked[0].url, "https://boards.greenhouse.io/northstar/jobs/90001");
+  assert.equal(ranked[0].queryId, "Q02");
+});
+
+test("discovered pages for a different opening are ineligible", async () => {
+  const { discovery } = await pipelineModules();
+  const seed = {
+    startingUrl: "https://jobs.example.com/roles/12345",
+    safeStartingUrl: "https://jobs.example.com/roles/12345",
+    sourceHost: "jobs.example.com",
+    roleTitle: "Senior Product Manager",
+    companyName: "Northstar Systems",
+    jobId: "12345",
+  };
+  const capture = usableCapture(
+    "Job title: Senior Finance Manager\nCompany: Northstar Systems\nJob description and requirements",
+    {
+      finalUrl: "https://mirror.example/jobs/99999",
+      candidateAssertions: [
+        candidate(
+          "role_title",
+          "Senior Finance Manager",
+          "senior-finance-manager",
+          "Senior Finance Manager",
+        ),
+        candidate(
+          "company_name",
+          "Northstar Systems",
+          "northstar-systems",
+          "Northstar Systems",
+        ),
+      ],
+    },
+  );
+  const assessment = discovery.assessCaptureIdentity(capture, seed);
+
+  assert.equal(assessment.match, "mismatch");
+  assert.equal(assessment.eligible, false);
+});
+
+test("an exact stable job ID can prove discovered-page identity", async () => {
+  const { discovery } = await pipelineModules();
+  const seed = {
+    startingUrl: "https://jobs.example.com/roles/12345",
+    safeStartingUrl: "https://jobs.example.com/roles/12345",
+    sourceHost: "jobs.example.com",
+    roleTitle: null,
+    companyName: null,
+    jobId: "12345",
+  };
+  const capture = usableCapture(
+    "Requisition 12345\nJob title: Platform Engineer\nJob description and requirements",
+    { finalUrl: "https://employer.example/careers/job/12345" },
+  );
+  const assessment = discovery.assessCaptureIdentity(capture, seed);
+
+  assert.equal(assessment.match, "exact-job-id");
+  assert.equal(assessment.eligible, true);
+});
+
+test("duplicate discovered pages never become extra corroborating votes", async () => {
+  const { reconcile } = await pipelineModules();
+  const quote = "This is a Remote role.";
+  const report = await runReconciler(reconcile.SOLARI_RECONCILE_SCRIPT, [
+    {
+      sealedText: quote,
+      origin: "submitted",
+      candidateAssertions: [
+        candidate("work_mode", "Remote role", "remote", "Remote"),
+      ],
+    },
+    {
+      sealedText: quote,
+      origin: "discovered",
+      discoveredVia: "Q01",
+      acquisitionStatus: "duplicate",
+      eligibleForRoleTerms: false,
+      candidateAssertions: [
+        candidate("work_mode", "Remote role", "remote", "Remote"),
+      ],
+    },
+  ]);
+  const workMode = report.findings.find(
+    (finding) => finding.field === "work_mode",
+  );
+
+  assert.equal(workMode.status, "confirmed");
+  assert.equal(workMode.evidenceIds.length, 1);
+  assert.equal(report.sources[1].origin, "discovered");
+  assert.equal(report.sources[1].discoveredVia, "Q01");
+  assert.equal(report.sources[1].acquisitionStatus, "duplicate");
+});
+
+test("URL validation blocks unsafe ports and carrier-grade private ranges", async () => {
+  const { urlSecurity } = await pipelineModules();
+  assert.throws(
+    () => urlSecurity.validatePublicUrl("https://jobs.example.com:8443/role"),
+    /standard public web ports/i,
+  );
+  assert.throws(
+    () => urlSecurity.validatePublicUrl("http://100.64.0.1/job"),
+    /private, local, and metadata/i,
+  );
 });

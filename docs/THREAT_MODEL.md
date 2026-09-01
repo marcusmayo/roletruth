@@ -17,6 +17,8 @@
 2. A URL run crosses from the Codespaces Node server into a recorded Solari
    Browser session. The returned DOM text, metadata, final URL, HTTP status,
    and screenshot remain untrusted evidence until classified and sealed.
+   Search result titles and snippets are permanently ineligible leads; only an
+   opened underlying page can become a source.
 3. A screenshot run sends the actual bytes to the Codespaces Node server,
    where Tesseract.js performs English OCR. The bytes and OCR text are then
    sent to an ephemeral Solari Sandbox for integrity verification.
@@ -33,9 +35,14 @@
 
 ### Intake and acquisition
 
-- Only public `http` and `https` URL syntax is accepted. Credential-bearing
-  URLs, localhost names, obvious private/loopback/link-local IPv4 targets, and
-  IPv6 local ranges are rejected before navigation.
+- Only public `http` and `https` URL syntax on ports 80/443 is accepted.
+  Credential-bearing URLs, localhost names, private/loopback/link-local/
+  carrier-grade IPv4 targets, and IPv6 local ranges are rejected. A Browser
+  route guard applies the same literal-target validation to redirects and
+  subresources.
+- Discovery uses at most three sanitized queries and captures at most four
+  candidates. Tracking, access-token, invite, email, and other non-job query
+  parameters are removed before a URL enters a search query.
 - One request may contain at most three URLs, eight screenshots, and eight
   total sources. Each screenshot is limited to 6 MB and combined screenshot
   data to 20 MB.
@@ -58,6 +65,9 @@
   visible in the source manifest but are excluded from role-term conclusions.
 - A company-profile source may contribute only company context; it cannot
   establish a role or its terms.
+- Discovered pages must match a stable job ID or strict role/company identity.
+  Multi-job pages, different openings, and ambiguous company-only searches are
+  excluded. Identical sealed text is marked duplicate and cannot add a vote.
 - The actual captured/uploaded image and sealed text are uploaded to the
   Sandbox. The verifier recomputes both SHA-256 values before a usable source
   becomes eligible.
@@ -96,9 +106,9 @@ The application does not intentionally log screenshot contents or OCR text.
 
 ## Known limitations and residual risk
 
-- The app does not independently resolve DNS or revalidate every redirect
-  target before Solari navigation. DNS rebinding and private redirect defense
-  therefore also depend on Solari/gateway egress policy.
+- The app does not independently resolve and pin DNS addresses. The Browser
+  request guard blocks syntactically private targets and validates redirects,
+  but DNS rebinding defense still depends on Solari/gateway egress policy.
 - The live endpoint has no application authentication, user-level quota, or
   rate limiter. Keep a Codespaces forwarded port private. Before exposing the
   Node preview publicly, add access control, request throttling, concurrency

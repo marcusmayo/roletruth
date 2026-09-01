@@ -9,9 +9,11 @@ function isPrivateIpv4(hostname: string) {
   return (
     parts[0] === 10 ||
     parts[0] === 127 ||
+    (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
     (parts[0] === 169 && parts[1] === 254) ||
     (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
     (parts[0] === 192 && parts[1] === 168) ||
+    parts[0] >= 224 ||
     parts[0] === 0
   );
 }
@@ -47,6 +49,9 @@ export function validatePublicUrl(value: unknown) {
   }
   if (parsed.username || parsed.password) {
     throw new Error("Credential-bearing URLs are not accepted.");
+  }
+  if (parsed.port && !["80", "443"].includes(parsed.port)) {
+    throw new Error("Only standard public web ports 80 and 443 are accepted.");
   }
 
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");

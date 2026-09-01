@@ -1,6 +1,18 @@
 import type { BrowserSession, LaunchOptions } from "@solarisdk/browser";
 import type { Sandbox } from "@solarisdk/sdk";
 
+import {
+  MAX_DISCOVERY_CAPTURES,
+  assessCaptureIdentity,
+  buildDiscoveryQueries,
+  buildDiscoverySeed,
+  deduplicateCandidates,
+  rankSearchCandidates,
+  type DiscoveryQuery,
+  type DiscoverySeed,
+  type SearchAnchor,
+  type SearchCandidate,
+} from "@/lib/evidence-discovery";
 import { parseEvidenceRequest } from "@/lib/evidence-intake";
 import {
   extractJobCandidates,
@@ -8,11 +20,18 @@ import {
   structuredJobsToSealedText,
   type LiveCaptureData,
 } from "@/lib/job-extractor";
-import { sha256Hex, type RoleTruthReport } from "@/lib/roletruth-engine";
+import {
+  sha256Hex,
+  type DiscoveryQueryTrace,
+  type DiscoveryTrace,
+  type EvidenceOrigin,
+  type RoleTruthReport,
+} from "@/lib/roletruth-engine";
 import { ocrScreenshots, type ScreenshotOcrResult } from "@/lib/screenshot-ocr";
 import { buildSolariLaunchOptions } from "@/lib/solari-launch-options";
 import { SOLARI_RECONCILE_SCRIPT } from "@/lib/solari-reconcile-script";
 import { assessSource } from "@/lib/source-quality";
+import { validatePublicUrl } from "@/lib/url-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +48,18 @@ const THIRD_PARTY_JOB_HOSTS = [
 type CaptureWithImage = LiveCaptureData & {
   imageBytes: Uint8Array;
   mimeType: "image/png" | "image/jpeg" | "image/webp";
+};
+
+type CaptureProvenance = {
+  origin: EvidenceOrigin;
+  discoveredVia?: string;
+  searchRank?: number;
+};
+
+type SearchRun = {
+  provider: string | null;
+  anchors: SearchAnchor[];
+  diagnostic?: string;
 };
 
 function hostFor(value: string) {
@@ -49,16 +80,36 @@ async function hashBytes(bytes: Uint8Array) {
   return sha256Hex(Uint8Array.from(bytes).buffer);
 }
 
+async function installPublicNetworkGuard(
+  page: Awaited<ReturnType<BrowserSession["newPage"]>>,
+) {
+  await page.route("**/*", async (route) => {
+    const requestUrl = route.request().url();
+    if (!/^https?:/i.test(requestUrl)) {
+      await route.continue();
+      return;
+    }
+    try {
+      validatePublicUrl(requestUrl);
+      await route.continue();
+    } catch {
+      await route.abort("blockedbyclient");
+    }
+  });
+}
+
 async function captureUrl(
   browser: BrowserSession,
   requestedUrl: string,
   index: number,
+  provenance: CaptureProvenance,
 ): Promise<CaptureWithImage> {
   const page = await browser.newPage();
   const capturedAt = new Date().toISOString();
   let httpStatus: number | null = null;
 
   try {
+    await installPublicNetworkGuard(page);
     const response = await page.goto(requestedUrl, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
@@ -93,7 +144,7 @@ async function captureUrl(
           .catch(() => []),
         page.screenshot({ fullPage: true }),
       ]);
-    const finalUrl = page.url();
+    const finalUrl = validatePublicUrl(page.url());
     const structuredJobs = parseStructuredJobScripts(jsonLdScripts);
     const metadataText = [
       "[Page metadata]",
@@ -133,6 +184,7 @@ async function captureUrl(
       textSha256: await sha256Hex(sealedText),
       screenshotSha256: await hashBytes(imageBytes),
       browserSessionId: browser.id,
+      ...provenance,
       httpStatus,
       structuredJobs,
       ...assessment,
@@ -173,6 +225,7 @@ async function captureUrl(
       textSha256: await sha256Hex(sealedText),
       screenshotSha256: await hashBytes(screenshot),
       browserSessionId: browser.id,
+      ...provenance,
       httpStatus,
       acquisitionStatus: "error",
       documentType: "unknown",
@@ -189,6 +242,78 @@ async function captureUrl(
   } finally {
     await page.close().catch(() => undefined);
   }
+}
+
+async function searchWithSolari(
+  browser: BrowserSession,
+  query: DiscoveryQuery,
+): Promise<SearchRun> {
+  const providers = [
+    {
+      name: "DuckDuckGo HTML",
+      url: `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query.query)}`,
+    },
+    {
+      name: "Bing",
+      url: `https://www.bing.com/search?q=${encodeURIComponent(query.query)}`,
+    },
+  ];
+  const diagnostics: string[] = [];
+
+  for (const provider of providers) {
+    const page = await browser.newPage();
+    try {
+      await installPublicNetworkGuard(page);
+      const response = await page.goto(provider.url, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
+      if (response && response.status() >= 400) {
+        diagnostics.push(`${provider.name} returned HTTP ${response.status()}.`);
+        continue;
+      }
+      const anchors = await page.locator("a[href]").evaluateAll((nodes) =>
+        nodes.slice(0, 200).map((node) => {
+          const anchor = node as HTMLAnchorElement;
+          const container = anchor.closest(
+            ".result, .web-result, li.b_algo, [data-testid='result'], article",
+          ) as HTMLElement | null;
+          return {
+            href: anchor.href,
+            title: (anchor.innerText || anchor.textContent || "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 240),
+            snippet: (container?.innerText || "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 600),
+          };
+        }),
+      );
+      const usable = anchors.filter(
+        (anchor) => anchor.href && anchor.title && /^https?:/i.test(anchor.href),
+      );
+      if (usable.length > 0) {
+        return { provider: provider.name, anchors: usable };
+      }
+      diagnostics.push(`${provider.name} returned no readable result links.`);
+    } catch (error) {
+      diagnostics.push(
+        `${provider.name} search failed: ${
+          error instanceof Error ? error.message : "unknown browser error"
+        }`,
+      );
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  }
+
+  return {
+    provider: null,
+    anchors: [],
+    diagnostic: diagnostics.join(" ").slice(0, 600),
+  };
 }
 
 async function captureScreenshots(
@@ -230,6 +355,7 @@ async function captureScreenshots(
         textSha256: await sha256Hex(sealedText),
         screenshotSha256: screenshot.sha256,
         ocrConfidence: result.confidence,
+        origin: "uploaded",
         ...assessment,
         imageBytes: screenshot.bytes,
         mimeType: screenshot.mimeType,
@@ -287,6 +413,7 @@ export async function POST(request: Request) {
     );
 
     const urlCaptures: CaptureWithImage[] = [];
+    let discovery: DiscoveryTrace | undefined;
     if (input.urls.length > 0) {
       const { Solari } = await import("@solarisdk/browser");
       browserClient = new Solari({
@@ -296,11 +423,12 @@ export async function POST(request: Request) {
       });
       browser = await browserClient.launch(buildSolariLaunchOptions());
       for (const [index, requestedUrl] of input.urls.entries()) {
-        urlCaptures.push(await captureUrl(browser, requestedUrl, index + 1));
+        urlCaptures.push(
+          await captureUrl(browser, requestedUrl, index + 1, {
+            origin: "submitted",
+          }),
+        );
       }
-      await browser.close();
-      browser = null;
-      await browserClient.close();
     }
 
     const screenshotCaptures = await captureScreenshots(
@@ -308,6 +436,104 @@ export async function POST(request: Request) {
       urlCaptures.length + 1,
     );
     const captures = [...urlCaptures, ...screenshotCaptures];
+
+    if (browser && urlCaptures.length > 0) {
+      const seed: DiscoverySeed = buildDiscoverySeed(captures);
+      const queries = buildDiscoveryQueries(seed);
+      const queryTraces: DiscoveryQueryTrace[] = [];
+      const candidatePool: SearchCandidate[] = [];
+      let candidatesScreened = 0;
+
+      for (const query of queries) {
+        const result = await searchWithSolari(browser, query);
+        candidatesScreened += result.anchors.length;
+        const ranked = rankSearchCandidates(
+          result.anchors,
+          query.id,
+          seed,
+          captures
+            .map((capture) => capture.finalUrl ?? capture.requestedUrl)
+            .filter((value): value is string => Boolean(value)),
+        );
+        candidatePool.push(...ranked);
+        queryTraces.push({
+          id: query.id,
+          query: query.query,
+          reason: query.reason,
+          provider: result.provider,
+          resultsScreened: result.anchors.length,
+          candidatesAccepted: ranked.length,
+          diagnostic: result.diagnostic,
+        });
+      }
+
+      const uniqueCandidates = deduplicateCandidates(
+        candidatePool.sort((a, b) => b.score - a.score || a.rank - b.rank),
+      );
+      const selectedCandidates = uniqueCandidates.slice(
+        0,
+        Math.min(MAX_DISCOVERY_CAPTURES, 8 - captures.length),
+      );
+      let duplicateCount = 0;
+
+      for (const candidate of selectedCandidates) {
+        const capture = await captureUrl(
+          browser,
+          candidate.url,
+          captures.length + 1,
+          {
+            origin: "discovered",
+            discoveredVia: candidate.queryId,
+            searchRank: candidate.rank,
+          },
+        );
+        const identity = assessCaptureIdentity(capture, seed);
+        capture.identityMatch = identity.match;
+        capture.diagnostics.push(identity.diagnostic);
+        if (!identity.eligible && capture.acquisitionStatus === "usable") {
+          capture.acquisitionStatus = "irrelevant";
+          capture.eligibleForRoleTerms = false;
+          capture.candidateAssertions = [];
+        }
+        const duplicate = captures.find(
+          (existing) =>
+            existing.textSha256 === capture.textSha256 &&
+            existing.acquisitionStatus === "usable",
+        );
+        if (duplicate) {
+          capture.acquisitionStatus = "duplicate";
+          capture.eligibleForRoleTerms = false;
+          capture.candidateAssertions = [];
+          capture.diagnostics.push(
+            `Duplicate content of ${duplicate.label}; it cannot add another vote.`,
+          );
+          duplicateCount += 1;
+        }
+        captures.push(capture);
+      }
+
+      discovery = {
+        attempted: true,
+        method: "solari-browser-search",
+        startingUrls: input.urls,
+        identity: {
+          roleTitle: seed.roleTitle,
+          companyName: seed.companyName,
+          jobId: seed.jobId,
+        },
+        queries: queryTraces,
+        candidatesScreened,
+        candidatesCaptured: selectedCandidates.length,
+        duplicatesExcluded: duplicateCount,
+        rejectedBeforeCapture: Math.max(
+          0,
+          candidatesScreened - uniqueCandidates.length,
+        ),
+      };
+      await browser.close();
+      browser = null;
+      await browserClient?.close();
+    }
 
     const { SolariClient } = await import("@solarisdk/sdk");
     const solari = new SolariClient({
@@ -361,8 +587,38 @@ export async function POST(request: Request) {
     const report = JSON.parse(
       await sandbox.files.readText("/tmp/roletruth-result.json"),
     ) as RoleTruthReport;
+    report.discovery = discovery;
     report.runtime.sandboxId = sandbox.id;
     report.runtime.sandboxExitCode = result.exitCode;
+    if (discovery) {
+      const discoveredUsable = report.sources.filter(
+        (source) =>
+          source.origin === "discovered" &&
+          source.acquisitionStatus === "usable",
+      ).length;
+      const submittedBlocked = report.sources.some(
+        (source) =>
+          source.origin === "submitted" &&
+          ["blocked", "auth_required", "error"].includes(
+            source.acquisitionStatus ?? "",
+          ),
+      );
+      if (submittedBlocked && discoveredUsable > 0) {
+        report.diagnostics = [
+          `Starting URL was unavailable; discovery continued and captured ${discoveredUsable} usable alternate source${discoveredUsable === 1 ? "" : "s"}.`,
+          ...(report.diagnostics ?? []),
+        ];
+      } else if (
+        !discovery.identity.roleTitle &&
+        !discovery.identity.jobId &&
+        discoveredUsable === 0
+      ) {
+        report.diagnostics = [
+          "The submitted URL did not identify a specific opening. RoleTruth searched for evidence but did not merge unrelated jobs.",
+          ...(report.diagnostics ?? []),
+        ];
+      }
+    }
 
     return Response.json(
       { report },

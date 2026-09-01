@@ -1,6 +1,8 @@
 import type {
   AcquisitionStatus,
   DocumentType,
+  EvidenceOrigin,
+  IdentityMatch,
   SourceKind,
 } from "./roletruth-engine";
 
@@ -44,6 +46,10 @@ export interface LiveCaptureData {
   diagnostics: string[];
   httpStatus?: number | null;
   ocrConfidence?: number;
+  origin?: EvidenceOrigin;
+  discoveredVia?: string;
+  searchRank?: number;
+  identityMatch?: IdentityMatch;
   imagePath?: string;
   structuredJobs?: StructuredJobPosting[];
   candidateAssertions?: CandidateAssertion[];

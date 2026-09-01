@@ -11,8 +11,23 @@ export type AcquisitionStatus =
   | "blocked"
   | "auth_required"
   | "not_job"
+  | "irrelevant"
+  | "duplicate"
   | "empty"
   | "error";
+
+export type EvidenceOrigin =
+  | "submitted"
+  | "discovered"
+  | "uploaded"
+  | "synthetic";
+
+export type IdentityMatch =
+  | "exact-job-id"
+  | "role-company"
+  | "role-only"
+  | "ambiguous"
+  | "mismatch";
 
 export type DocumentType =
   | "job_post"
@@ -50,7 +65,37 @@ export interface EvidenceSource {
   httpStatus?: number | null;
   textLength?: number;
   ocrConfidence?: number;
+  origin?: EvidenceOrigin;
+  discoveredVia?: string;
+  searchRank?: number;
+  identityMatch?: IdentityMatch;
   synthetic?: boolean;
+}
+
+export interface DiscoveryQueryTrace {
+  id: string;
+  query: string;
+  reason: string;
+  provider: string | null;
+  resultsScreened: number;
+  candidatesAccepted: number;
+  diagnostic?: string;
+}
+
+export interface DiscoveryTrace {
+  attempted: boolean;
+  method: "solari-browser-search";
+  startingUrls: string[];
+  identity: {
+    roleTitle: string | null;
+    companyName: string | null;
+    jobId: string | null;
+  };
+  queries: DiscoveryQueryTrace[];
+  candidatesScreened: number;
+  candidatesCaptured: number;
+  duplicatesExcluded: number;
+  rejectedBeforeCapture: number;
 }
 
 export interface EvidenceSpan {
@@ -125,6 +170,7 @@ export interface RoleTruthReport {
     companyName: string | null;
   };
   diagnostics?: string[];
+  discovery?: DiscoveryTrace;
   runtime: {
     browserSessionId: string | null;
     sandboxId: string | null;
@@ -416,7 +462,24 @@ export function canonicalReport(report: RoleTruthReport) {
     id: report.id,
     engineVersion: report.engineVersion,
     mode: report.mode,
-    sourceHashes: report.sources.map((source) => source.sha256).sort(),
+    sourceReceipts: report.sources
+      .map((source) => ({
+        sha256: source.sha256,
+        origin: source.origin ?? null,
+        requestedUrl: source.requestedUrl ?? null,
+        finalUrl: source.finalUrl ?? null,
+        discoveredVia: source.discoveredVia ?? null,
+        identityMatch: source.identityMatch ?? null,
+      }))
+      .sort((a, b) =>
+        `${a.sha256}:${a.finalUrl}`.localeCompare(`${b.sha256}:${b.finalUrl}`),
+      ),
+    discoveryQueries:
+      report.discovery?.queries.map((query) => ({
+        id: query.id,
+        query: query.query,
+        provider: query.provider,
+      })) ?? [],
     findings: report.findings.map((finding) => ({
       field: finding.field,
       status: finding.status,
