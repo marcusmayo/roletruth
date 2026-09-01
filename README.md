@@ -133,9 +133,25 @@ staging, questions, and JSON export work without a key.
 2. In the repository or Codespaces settings, create a secret named
    `SOLARI_API_KEY`. Do not commit it and do not prefix it with
    `NEXT_PUBLIC_`.
-3. Rebuild/restart the Codespace so the server receives the secret.
-4. Run `npm run dev:codespaces`, paste a public job URL into **Acquire with
-   Solari**, and run it.
+3. **Stop and restart** the Codespace so GitHub injects a newly created secret.
+   Reloading the browser tab is not sufficient.
+4. The managed preview restarts automatically and checks that the server's
+   secret state matches the Codespaces environment. Verify it without printing
+   the key:
+
+   ```bash
+   node -e 'console.log(process.env.SOLARI_API_KEY ? "Codespaces secret: present" : "Codespaces secret: missing")'
+   curl -fsS http://127.0.0.1:3000/api/solari/status
+   ```
+
+   The expected results are `Codespaces secret: present` and
+   `{"configured":true}`. If they differ, run
+   `bash scripts/start-codespaces-preview.sh` to replace the stale preview.
+5. Paste a public job URL into **Acquire with Solari** and run it.
+
+Codespaces deliberately uses the Node-based Next.js development server. The
+Solari Browser client includes Node runtime assets that cannot execute inside
+the Cloudflare workerd process used for the deployable Sites build.
 
 For the smallest end-to-end proof without the frontend:
 

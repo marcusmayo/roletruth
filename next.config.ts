@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  agentRules: false,
+  // Solari's browser client ships Node-only runtime assets through Patchright.
+  // Keep those packages out of Turbopack's route bundle so Codespaces loads
+  // them directly in the Node server process.
+  serverExternalPackages: [
+    "@solarisdk/browser",
+    "@solarisdk/sdk",
+    "patchright-core",
+  ],
   async headers() {
     return [
       {
