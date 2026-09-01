@@ -2,6 +2,7 @@
   "name": "RoleTruth",
   "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
   "postCreateCommand": "npm ci",
+  "postAttachCommand": "bash scripts/start-codespaces-preview.sh",
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {

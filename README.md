@@ -1,8 +1,8 @@
 # RoleTruth
 
 [![RoleTruth verification](https://github.com/marcusmayo/roletruth/actions/workflows/ci.yml/badge.svg)](https://github.com/marcusmayo/roletruth/actions/workflows/ci.yml)
-[![MIT License](https://img.shields.io/badge/license-MIT-b8ff5c.svg)](LICENSE)
-[![Solari Browser + Sandbox](https://img.shields.io/badge/Solari-Browser%20%2B%20Sandbox-75d7ff.svg)](https://docs.getsolari.com/)
+[![MIT License](https://img.shields.io/badge/license-MIT-F5B301.svg)](LICENSE)
+[![Solari Browser + Sandbox](https://img.shields.io/badge/Solari-Browser%20%2B%20Sandbox-F5B301.svg)](https://docs.getsolari.com/)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/marcusmayo/roletruth)
 
 RoleTruth turns scattered job posts, screenshots, and direct clarifications into
@@ -13,7 +13,10 @@ role terms as **Confirmed**, **Conflicted**, or **Unknown**, exposes the exact
 source span behind every conclusion, and labels derived math so a scenario
 cannot masquerade as quoted compensation.
 
-![RoleTruth evidence matrix](docs/roletruth-preview.png)
+> **No API key is required for the working preview.** A `SOLARI_API_KEY` is
+> needed only when acquiring and reconciling a new live source through Solari.
+
+![RoleTruth evidence matrix](docs/roletruth-solari-preview.jpg)
 
 ## Judge it in 90 seconds
 
@@ -115,12 +118,8 @@ rules.
 
 1. Select **Code → Codespaces → Create codespace on main**, or use the badge at
    the top of this README.
-2. In the Codespaces terminal:
-
-   ```bash
-   npm run dev:codespaces
-   ```
-
+2. Wait for the initial dependency setup. The preview server starts
+   automatically whenever the Codespace attaches.
 3. Open the automatically forwarded **RoleTruth frontend** on port **3000**.
    If it does not open automatically, select the **Ports** tab, locate port 3000,
    and choose **Open in Browser**.
