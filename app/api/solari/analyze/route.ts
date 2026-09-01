@@ -1,16 +1,250 @@
 import type { BrowserSession, LaunchOptions } from "@solarisdk/browser";
 import type { Sandbox } from "@solarisdk/sdk";
 
+import { parseEvidenceRequest } from "@/lib/evidence-intake";
+import {
+  extractJobCandidates,
+  parseStructuredJobScripts,
+  structuredJobsToSealedText,
+  type LiveCaptureData,
+} from "@/lib/job-extractor";
 import { sha256Hex, type RoleTruthReport } from "@/lib/roletruth-engine";
+import { ocrScreenshots, type ScreenshotOcrResult } from "@/lib/screenshot-ocr";
 import { buildSolariLaunchOptions } from "@/lib/solari-launch-options";
 import { SOLARI_RECONCILE_SCRIPT } from "@/lib/solari-reconcile-script";
-import { validatePublicUrl } from "@/lib/url-security";
+import { assessSource } from "@/lib/source-quality";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_URLS = 3;
 const MAX_TEXT_LENGTH = 200_000;
+const THIRD_PARTY_JOB_HOSTS = [
+  "glassdoor.",
+  "linkedin.",
+  "indeed.",
+  "ziprecruiter.",
+  "monster.",
+];
+
+type CaptureWithImage = LiveCaptureData & {
+  imageBytes: Uint8Array;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+};
+
+function hostFor(value: string) {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return "Captured page";
+  }
+}
+
+function authorityFor(host: string) {
+  return THIRD_PARTY_JOB_HOSTS.some((marker) => host.includes(marker))
+    ? ("third-party" as const)
+    : ("unclassified" as const);
+}
+
+async function hashBytes(bytes: Uint8Array) {
+  return sha256Hex(Uint8Array.from(bytes).buffer);
+}
+
+async function captureUrl(
+  browser: BrowserSession,
+  requestedUrl: string,
+  index: number,
+): Promise<CaptureWithImage> {
+  const page = await browser.newPage();
+  const capturedAt = new Date().toISOString();
+  let httpStatus: number | null = null;
+
+  try {
+    const response = await page.goto(requestedUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    httpStatus = response?.status() ?? null;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const textLength = await page
+        .locator("body")
+        .innerText()
+        .then((value) => value.trim().length)
+        .catch(() => 0);
+      if (textLength >= 240) break;
+      await page.waitForTimeout(750);
+    }
+
+    const [rawText, title, heading, jsonLdScripts, screenshot] =
+      await Promise.all([
+        page
+          .locator("body")
+          .innerText()
+          .then((value) => value.slice(0, MAX_TEXT_LENGTH)),
+        page.title(),
+        page
+          .locator("h1")
+          .first()
+          .innerText()
+          .catch(() => ""),
+        page
+          .locator('script[type="application/ld+json"]')
+          .allTextContents()
+          .catch(() => []),
+        page.screenshot({ fullPage: true }),
+      ]);
+    const finalUrl = page.url();
+    const structuredJobs = parseStructuredJobScripts(jsonLdScripts);
+    const metadataText = [
+      "[Page metadata]",
+      title ? `Page title: ${title}` : "",
+      heading ? `Heading: ${heading}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const structuredText = structuredJobsToSealedText(structuredJobs);
+    const sealedText = [rawText, metadataText, structuredText]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 300_000);
+    const assessment = assessSource({
+      requestedUrl,
+      finalUrl,
+      title,
+      heading,
+      text: rawText,
+      httpStatus,
+      structuredJobCount: structuredJobs.length,
+      kind: "url",
+    });
+    const imageBytes = new Uint8Array(screenshot);
+    const host = hostFor(finalUrl);
+    const capture: CaptureWithImage = {
+      sourceId: `src-live-${index}`,
+      kind: "url",
+      label: title || heading || host,
+      publisher: host,
+      author: "Rendered page",
+      authority: authorityFor(host),
+      requestedUrl,
+      finalUrl,
+      capturedAt,
+      sealedText,
+      textSha256: await sha256Hex(sealedText),
+      screenshotSha256: await hashBytes(imageBytes),
+      browserSessionId: browser.id,
+      httpStatus,
+      structuredJobs,
+      ...assessment,
+      imageBytes,
+      mimeType: "image/png",
+    };
+    capture.candidateAssertions = extractJobCandidates(capture);
+    return capture;
+  } catch (error) {
+    const finalUrl = page.url() || requestedUrl;
+    const host = hostFor(finalUrl);
+    const [title, text, screenshot] = await Promise.all([
+      page.title().catch(() => ""),
+      page
+        .locator("body")
+        .innerText()
+        .then((value) => value.slice(0, MAX_TEXT_LENGTH))
+        .catch(() => ""),
+      page
+        .screenshot({ fullPage: true })
+        .then((value) => new Uint8Array(value))
+        .catch(() => new Uint8Array()),
+    ]);
+    const sealedText = text || `Acquisition error: ${
+      error instanceof Error ? error.message : "Unknown browser error"
+    }`;
+    return {
+      sourceId: `src-live-${index}`,
+      kind: "url",
+      label: title || host,
+      publisher: host,
+      author: "Rendered page",
+      authority: authorityFor(host),
+      requestedUrl,
+      finalUrl,
+      capturedAt,
+      sealedText,
+      textSha256: await sha256Hex(sealedText),
+      screenshotSha256: await hashBytes(screenshot),
+      browserSessionId: browser.id,
+      httpStatus,
+      acquisitionStatus: "error",
+      documentType: "unknown",
+      eligibleForRoleTerms: false,
+      diagnostics: [
+        error instanceof Error
+          ? `Browser acquisition failed: ${error.message}`
+          : "Browser acquisition failed.",
+      ],
+      candidateAssertions: [],
+      imageBytes: screenshot,
+      mimeType: "image/png",
+    };
+  } finally {
+    await page.close().catch(() => undefined);
+  }
+}
+
+async function captureScreenshots(
+  results: ScreenshotOcrResult[],
+  startIndex: number,
+): Promise<CaptureWithImage[]> {
+  return Promise.all(
+    results.map(async (result, offset) => {
+      const { screenshot } = result;
+      const sourceId = `src-live-${startIndex + offset}`;
+      const capturedAt = new Date().toISOString();
+      const sealedText = result.text.slice(0, MAX_TEXT_LENGTH);
+      const assessment = result.error
+        ? {
+            acquisitionStatus: "error" as const,
+            documentType: "unknown" as const,
+            eligibleForRoleTerms: false,
+            diagnostics: [`Screenshot OCR failed: ${result.error}`],
+          }
+        : assessSource({
+            title: screenshot.name,
+            text: sealedText,
+            kind: "screenshot",
+          });
+      if (!result.error && result.confidence < 45) {
+        assessment.diagnostics.push(
+          `OCR confidence was low (${result.confidence.toFixed(0)}%). Verify quoted text before relying on it.`,
+        );
+      }
+      const capture: CaptureWithImage = {
+        sourceId,
+        kind: "screenshot",
+        label: screenshot.name,
+        publisher: "Uploaded screenshot",
+        author: "User-provided evidence",
+        authority: "unclassified",
+        capturedAt,
+        sealedText,
+        textSha256: await sha256Hex(sealedText),
+        screenshotSha256: screenshot.sha256,
+        ocrConfidence: result.confidence,
+        ...assessment,
+        imageBytes: screenshot.bytes,
+        mimeType: screenshot.mimeType,
+      };
+      capture.candidateAssertions = extractJobCandidates(capture);
+      return capture;
+    }),
+  );
+}
+
+function extensionFor(mimeType: CaptureWithImage["mimeType"]) {
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
+  return "png";
+}
 
 export async function POST(request: Request) {
   const apiKey = process.env.SOLARI_API_KEY;
@@ -24,19 +258,12 @@ export async function POST(request: Request) {
     );
   }
 
-  let urls: string[];
+  let input;
   try {
-    const body = (await request.json()) as { urls?: unknown };
-    if (!Array.isArray(body.urls) || body.urls.length < 1) {
-      throw new Error("Provide at least one public source URL.");
-    }
-    if (body.urls.length > MAX_URLS) {
-      throw new Error(`RoleTruth accepts at most ${MAX_URLS} live URLs per run.`);
-    }
-    urls = body.urls.map(validatePublicUrl);
+    input = await parseEvidenceRequest(request);
   } catch (error) {
     return Response.json(
-      { error: error instanceof Error ? error.message : "Invalid request." },
+      { error: error instanceof Error ? error.message : "Invalid evidence." },
       { status: 400 },
     );
   }
@@ -49,52 +276,40 @@ export async function POST(request: Request) {
   let sandbox: Sandbox | null = null;
 
   try {
-    const [{ Solari }, { SolariClient }] = await Promise.all([
-      import("@solarisdk/browser"),
-      import("@solarisdk/sdk"),
-    ]);
-    browserClient = new Solari({
-      apiKey,
-      timeoutMs: 60_000,
-      maxAttempts: 2,
-    });
-    browser = await browserClient.launch(buildSolariLaunchOptions());
+    const ocrPromise = ocrScreenshots(input.screenshots).catch((error) =>
+      input.screenshots.map((screenshot) => ({
+        screenshot,
+        text: "",
+        confidence: 0,
+        error:
+          error instanceof Error ? error.message : "OCR initialization failed.",
+      })),
+    );
 
-    const captures = [];
-    for (const requestedUrl of urls) {
-      const page = await browser.newPage();
-      await page.goto(requestedUrl, {
-        waitUntil: "domcontentloaded",
-        timeout: 60_000,
+    const urlCaptures: CaptureWithImage[] = [];
+    if (input.urls.length > 0) {
+      const { Solari } = await import("@solarisdk/browser");
+      browserClient = new Solari({
+        apiKey,
+        timeoutMs: 60_000,
+        maxAttempts: 2,
       });
-      const text = (await page.locator("body").innerText()).slice(
-        0,
-        MAX_TEXT_LENGTH,
-      );
-      const screenshot = await page.screenshot({ fullPage: true });
-      const screenshotBytes = new Uint8Array(screenshot);
-      captures.push({
-        requestedUrl,
-        finalUrl: page.url(),
-        title: await page.title(),
-        text,
-        capturedAt: new Date().toISOString(),
-        browserSessionId: browser.id,
-        textSha256: await sha256Hex(text),
-        screenshotSha256: await sha256Hex(
-          screenshotBytes.buffer.slice(
-            screenshotBytes.byteOffset,
-            screenshotBytes.byteOffset + screenshotBytes.byteLength,
-          ),
-        ),
-      });
-      await page.close();
+      browser = await browserClient.launch(buildSolariLaunchOptions());
+      for (const [index, requestedUrl] of input.urls.entries()) {
+        urlCaptures.push(await captureUrl(browser, requestedUrl, index + 1));
+      }
+      await browser.close();
+      browser = null;
+      await browserClient.close();
     }
 
-    await browser.close();
-    browser = null;
-    await browserClient.close();
+    const screenshotCaptures = await captureScreenshots(
+      await ocrPromise,
+      urlCaptures.length + 1,
+    );
+    const captures = [...urlCaptures, ...screenshotCaptures];
 
+    const { SolariClient } = await import("@solarisdk/sdk");
     const solari = new SolariClient({
       apiKey,
       callTimeoutMs: 60_000,
@@ -102,12 +317,26 @@ export async function POST(request: Request) {
     sandbox = await solari.sandboxes.create({
       template: "base",
       timeoutMs: 5 * 60_000,
-      metadata: { product: "roletruth", purpose: "deterministic-reconcile" },
+      metadata: { product: "roletruth", purpose: "evidence-verification" },
     });
     await sandbox.connect();
+
+    const manifest = [];
+    for (const [index, capture] of captures.entries()) {
+      const imagePath = `/tmp/roletruth-source-${index + 1}.${extensionFor(
+        capture.mimeType,
+      )}`;
+      await sandbox.files.upload(imagePath, capture.imageBytes);
+      const { imageBytes: _imageBytes, mimeType: _mimeType, ...serializable } =
+        capture;
+      void _imageBytes;
+      void _mimeType;
+      manifest.push({ ...serializable, imagePath });
+    }
+
     await sandbox.files.write(
       "/tmp/roletruth-input.json",
-      JSON.stringify(captures),
+      JSON.stringify(manifest),
     );
     await sandbox.files.write(
       "/tmp/roletruth-reconcile.py",
@@ -124,7 +353,8 @@ export async function POST(request: Request) {
     });
     if (result.exitCode !== 0) {
       throw new Error(
-        `Solari Sandbox reconciliation failed (exit ${result.exitCode}).`,
+        result.stderr ||
+          `Solari Sandbox reconciliation failed (exit ${result.exitCode}).`,
       );
     }
 

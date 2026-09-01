@@ -150,6 +150,14 @@ export const demoEvidence: EvidenceSpan[] = [
 
 export const demoAssertions: Assertion[] = [
   {
+    id: "as-company",
+    field: "company_name",
+    rawValue: "Pinetree Research",
+    normalizedValue: "pinetree-research",
+    displayValue: "Pinetree Research",
+    evidenceId: "ev-role",
+  },
+  {
     id: "as-role",
     field: "role_title",
     rawValue: "SWE intern",

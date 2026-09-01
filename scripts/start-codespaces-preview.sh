@@ -104,8 +104,15 @@ expected_browser_version="$(
 installed_browser_version="$(
   node -p "require('./node_modules/@solarisdk/browser/package.json').version" 2>/dev/null || true
 )"
-if [[ "$installed_browser_version" != "$expected_browser_version" ]]; then
-  echo "[roletruth] Installing the lockfile-pinned Solari runtime."
+expected_ocr_version="$(
+  node -p "require('./package.json').dependencies['tesseract.js']"
+)"
+installed_ocr_version="$(
+  node -p "require('./node_modules/tesseract.js/package.json').version" 2>/dev/null || true
+)"
+if [[ "$installed_browser_version" != "$expected_browser_version" ]] ||
+  [[ "$installed_ocr_version" != "$expected_ocr_version" ]]; then
+  echo "[roletruth] Installing the lockfile-pinned browser and OCR runtimes."
   npm ci
 fi
 

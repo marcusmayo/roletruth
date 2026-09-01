@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
     "@solarisdk/browser",
     "@solarisdk/sdk",
     "patchright-core",
+    "tesseract.js",
+    "tesseract.js-core",
   ],
   async headers() {
     return [

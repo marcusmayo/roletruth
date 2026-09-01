@@ -6,13 +6,33 @@ export type ClaimStatus =
 
 export type SourceKind = "screenshot" | "url" | "synthetic";
 
+export type AcquisitionStatus =
+  | "usable"
+  | "blocked"
+  | "auth_required"
+  | "not_job"
+  | "empty"
+  | "error";
+
+export type DocumentType =
+  | "job_post"
+  | "company_profile"
+  | "recruiter_message"
+  | "clarification"
+  | "unknown";
+
 export interface EvidenceSource {
   id: string;
   label: string;
   publisher: string;
   author: string;
   kind: SourceKind;
-  authority: "direct" | "official" | "third-party" | "test-only";
+  authority:
+    | "direct"
+    | "official"
+    | "third-party"
+    | "unclassified"
+    | "test-only";
   image?: string;
   url?: string;
   requestedUrl?: string;
@@ -23,6 +43,13 @@ export interface EvidenceSource {
   textSha256?: string;
   screenshotSha256?: string;
   browserSessionId?: string;
+  acquisitionStatus?: AcquisitionStatus;
+  documentType?: DocumentType;
+  eligibleForRoleTerms?: boolean;
+  diagnostics?: string[];
+  httpStatus?: number | null;
+  textLength?: number;
+  ocrConfidence?: number;
   synthetic?: boolean;
 }
 
@@ -48,7 +75,13 @@ export interface Assertion {
 export interface ClaimDefinition {
   field: string;
   label: string;
-  group: "Role" | "Location" | "Compensation" | "Engagement" | "Application";
+  group:
+    | "Role"
+    | "Location"
+    | "Compensation"
+    | "Engagement"
+    | "Requirements"
+    | "Application";
   unknownReason: string;
   question?: string;
   contextEvidenceIds?: string[];
@@ -86,6 +119,12 @@ export interface RoleTruthReport {
   findings: Finding[];
   calculations: Calculation[];
   questions: string[];
+  analysisStatus?: "complete" | "partial" | "insufficient";
+  subject?: {
+    roleTitle: string | null;
+    companyName: string | null;
+  };
+  diagnostics?: string[];
   runtime: {
     browserSessionId: string | null;
     sandboxId: string | null;
@@ -94,6 +133,12 @@ export interface RoleTruthReport {
 }
 
 export const CLAIM_DEFINITIONS: ClaimDefinition[] = [
+  {
+    field: "company_name",
+    label: "Company",
+    group: "Role",
+    unknownReason: "The supplied sources do not explicitly name the company.",
+  },
   {
     field: "role_title",
     label: "Role",
@@ -107,6 +152,14 @@ export const CLAIM_DEFINITIONS: ClaimDefinition[] = [
     unknownReason: "No eligible source explicitly states the work mode.",
     question:
       "Can you confirm whether this may be performed fully remotely from Virginia and whether any onsite cadence applies?",
+  },
+  {
+    field: "job_location",
+    label: "Location",
+    group: "Location",
+    unknownReason: "No eligible source explicitly states the job location.",
+    question:
+      "What location restrictions or approved working states apply to this role?",
   },
   {
     field: "relocation_required",
@@ -148,6 +201,18 @@ export const CLAIM_DEFINITIONS: ClaimDefinition[] = [
       "The sources do not establish employee versus contractor status or a full-time schedule.",
     question:
       "Is the worker classification employee or contractor, and is the schedule full-time or part-time?",
+  },
+  {
+    field: "experience_required",
+    label: "Experience",
+    group: "Requirements",
+    unknownReason: "No explicit minimum experience requirement was found.",
+  },
+  {
+    field: "education_required",
+    label: "Education",
+    group: "Requirements",
+    unknownReason: "No explicit education requirement was found.",
   },
   {
     field: "application_materials",
@@ -332,6 +397,12 @@ export function buildReport(
       },
     ],
     questions,
+    analysisStatus: "complete",
+    subject: {
+      roleTitle: "SWE intern",
+      companyName: "Pinetree Research",
+    },
+    diagnostics: [],
     runtime: {
       browserSessionId: null,
       sandboxId: null,

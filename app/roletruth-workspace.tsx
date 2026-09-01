@@ -20,9 +20,11 @@ import {
   KeyRound,
   LoaderCircle,
   Play,
+  ScanText,
   ShieldCheck,
   TerminalSquare,
   Upload,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -39,7 +41,14 @@ import {
 
 type View = "report" | "evidence" | "method";
 type SolariState = "checking" | "ready" | "unconfigured";
-type StagedFile = { name: string; size: number; sha256: string };
+type RunState = "idle" | "running" | "complete" | "error";
+type StagedFile = {
+  file: File;
+  name: string;
+  size: number;
+  sha256: string;
+  previewUrl: string;
+};
 
 const statusMeta: Record<
   ClaimStatus,
@@ -59,6 +68,37 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function reportTitle(report: RoleTruthReport) {
+  if (report.mode === "demo-local") return "Solari SWE internship";
+  const role = report.subject?.roleTitle;
+  const company = report.subject?.companyName;
+  if (role && company) return `${role} · ${company}`;
+  if (role) return role;
+  if (company) return `${company} — role not established`;
+  return "Role not established";
+}
+
+function sourceStateLabel(source: EvidenceSource) {
+  switch (source.acquisitionStatus) {
+    case "usable":
+      return "Verified";
+    case "blocked":
+      return "Blocked";
+    case "auth_required":
+      return "Sign-in required";
+    case "not_job":
+      return source.documentType === "company_profile"
+        ? "Company context"
+        : "Not a job post";
+    case "empty":
+      return "Unreadable";
+    case "error":
+      return "Failed";
+    default:
+      return "Reviewed";
+  }
 }
 
 function StatusPill({ status }: { status: ClaimStatus }) {
@@ -96,13 +136,21 @@ export function RoleTruthWorkspace() {
   const [liveStatus, setLiveStatus] = useState("");
   const [liveReport, setLiveReport] = useState<RoleTruthReport | null>(null);
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
+  const [runState, setRunState] = useState<RunState>("idle");
+  const [isStaging, setIsStaging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const runGeneration = useRef(0);
 
   const demoReport = useMemo(
     () => buildReport(demoFixture, includeConflict),
     [includeConflict],
   );
   const report = liveReport ?? demoReport;
+  const usableSources = report.sources.filter(
+    (source) =>
+      source.acquisitionStatus === undefined ||
+      source.acquisitionStatus === "usable",
+  ).length;
 
   useEffect(() => {
     let active = true;
@@ -158,36 +206,93 @@ export function RoleTruthWorkspace() {
   ).length;
 
   function resetDemo() {
+    runGeneration.current += 1;
+    stagedFiles.forEach((file) => URL.revokeObjectURL(file.previewUrl));
+    setStagedFiles([]);
+    setUrl("");
     setLiveReport(null);
     setLiveStatus("");
+    setRunState("idle");
     setSelectedField("work_mode");
     setView("report");
   }
 
+  function markEvidenceChanged(message: string) {
+    runGeneration.current += 1;
+    setLiveReport(null);
+    setRunState("idle");
+    setLiveStatus(message);
+  }
+
   async function stageFiles(files: FileList | null) {
     if (!files) return;
-    const available = Math.max(0, 8 - stagedFiles.length);
-    const next = await Promise.all(
-      [...files].slice(0, available).map(async (file) => ({
-        name: file.name,
-        size: file.size,
-        sha256: await sha256Hex(await file.arrayBuffer()),
-      })),
-    );
-    setStagedFiles((current) => [...current, ...next]);
-    setLiveStatus(
-      "Screenshot evidence staged locally. Live URL acquisition remains separate.",
-    );
+    setIsStaging(true);
+    try {
+      const available = Math.max(
+        0,
+        8 - stagedFiles.length - (url.trim() ? 1 : 0),
+      );
+      const selected = [...files]
+        .filter((file) => file.size > 0 && file.size <= 6 * 1024 * 1024)
+        .slice(0, available);
+      const next = await Promise.all(
+        selected.map(async (file) => ({
+          file,
+          name: file.name,
+          size: file.size,
+          sha256: await sha256Hex(await file.arrayBuffer()),
+          previewUrl: URL.createObjectURL(file),
+        })),
+      );
+      setStagedFiles((current) => {
+        const existing = new Set(current.map((file) => file.sha256));
+        const unique = next.filter((file) => !existing.has(file.sha256));
+        next
+          .filter((file) => existing.has(file.sha256))
+          .forEach((file) => URL.revokeObjectURL(file.previewUrl));
+        return [...current, ...unique];
+      });
+      markEvidenceChanged(
+        selected.length < files.length
+          ? "Some files were skipped. Use valid PNG, JPEG, or WebP screenshots under 6 MB."
+          : "Screenshots ready. Analyze evidence to OCR and reconcile them with the URL.",
+      );
+      if (fileInput.current) fileInput.current.value = "";
+    } finally {
+      setIsStaging(false);
+    }
+  }
+
+  function removeStagedFile(sha256: string) {
+    setStagedFiles((current) => {
+      const removed = current.find((file) => file.sha256 === sha256);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return current.filter((file) => file.sha256 !== sha256);
+    });
+    markEvidenceChanged("Evidence changed. Run a new analysis when ready.");
   }
 
   async function runLiveCapture() {
-    if (!url.trim() || solariState !== "ready") return;
-    setLiveStatus("Solari Browser is acquiring the source…");
+    if (
+      (!url.trim() && stagedFiles.length === 0) ||
+      solariState !== "ready" ||
+      runState === "running" ||
+      isStaging
+    )
+      return;
+    const generation = ++runGeneration.current;
+    setLiveReport(null);
+    setRunState("running");
+    setLiveStatus(
+      "Acquiring URLs, OCRing screenshots, and verifying exact evidence in Solari Sandbox…",
+    );
     try {
+      const form = new FormData();
+      form.set("urls", JSON.stringify(url.trim() ? [url.trim()] : []));
+      stagedFiles.forEach((item) => form.append("screenshots", item.file));
       const response = await fetch("/api/solari/analyze", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ urls: [url.trim()] }),
+        body: form,
       });
       const payload = (await response.json()) as {
         report?: RoleTruthReport;
@@ -196,11 +301,38 @@ export function RoleTruthWorkspace() {
       if (!response.ok || !payload.report) {
         throw new Error(payload.error || "The live acquisition did not finish.");
       }
-      setLiveReport(payload.report);
-      setSelectedField(payload.report.findings[0]?.field ?? "");
+      if (runGeneration.current !== generation) return;
+      const previewsByHash = new Map(
+        stagedFiles.map((file) => [file.sha256, file.previewUrl]),
+      );
+      const hydratedReport: RoleTruthReport = {
+        ...payload.report,
+        sources: payload.report.sources.map((source) => ({
+          ...source,
+          image:
+            source.kind === "screenshot"
+              ? previewsByHash.get(source.sha256)
+              : source.image,
+        })),
+      };
+      setLiveReport(hydratedReport);
+      setSelectedField(
+        hydratedReport.findings.find(
+          (finding) => finding.status === "confirmed" || finding.status === "conflicted",
+        )?.field ?? hydratedReport.findings[0]?.field ?? "",
+      );
       setView("report");
-      setLiveStatus("Live Solari acquisition and sandbox reconciliation complete.");
+      setRunState("complete");
+      setLiveStatus(
+        hydratedReport.analysisStatus === "insufficient"
+          ? "No usable job posting was found. Review the source diagnostics and add the actual listing or role screenshot."
+          : hydratedReport.analysisStatus === "partial"
+            ? "Partial analysis complete. Usable evidence was reconciled; blocked or irrelevant sources remain visibly excluded."
+            : "Evidence analysis complete. Every conclusion is linked to a verified source span.",
+      );
     } catch (error) {
+      if (runGeneration.current !== generation) return;
+      setRunState("error");
       setLiveStatus(
         error instanceof Error ? error.message : "Live acquisition failed.",
       );
@@ -208,7 +340,16 @@ export function RoleTruthWorkspace() {
   }
 
   function downloadReport() {
-    const payload = JSON.stringify({ ...report, reportHash }, null, 2);
+    const exportReport = {
+      ...report,
+      sources: report.sources.map((source) =>
+        source.image?.startsWith("blob:")
+          ? { ...source, image: undefined }
+          : source,
+      ),
+      reportHash,
+    };
+    const payload = JSON.stringify(exportReport, null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const downloadUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -239,9 +380,17 @@ export function RoleTruthWorkspace() {
 
         <div className="rt-topbar-center" aria-label="Current execution mode">
           <span className="rt-live-dot" />
-          <span>{liveReport ? "Solari live" : "Reproducible demo"}</span>
+          <span>
+            {runState === "running"
+              ? "Analyzing evidence"
+              : liveReport
+                ? "Solari live"
+                : "Reproducible demo"}
+          </span>
           <span className="rt-topbar-divider" />
-          <span>{report.sources.length} sealed sources</span>
+          <span>
+            {usableSources}/{report.sources.length} usable sources
+          </span>
         </div>
 
         <div className="rt-top-actions">
@@ -270,7 +419,11 @@ export function RoleTruthWorkspace() {
               Reconcile direct sources into traceable decisions. Ambiguity stays
               visible.
             </p>
-            <button className="rt-button rt-button--primary" onClick={resetDemo}>
+            <button
+              className="rt-button rt-button--primary"
+              onClick={resetDemo}
+              disabled={runState === "running" || isStaging}
+            >
               <Play aria-hidden="true" size={16} fill="currentColor" />
               Run hiring-post demo
             </button>
@@ -308,18 +461,16 @@ export function RoleTruthWorkspace() {
                 id="source-url"
                 type="url"
                 value={url}
-                onChange={(event) => setUrl(event.target.value)}
+                onChange={(event) => {
+                  setUrl(event.target.value);
+                  markEvidenceChanged(
+                    "Evidence changed. Analyze when the URL and screenshots are ready.",
+                  );
+                }}
                 placeholder="https://…"
                 autoComplete="url"
+                disabled={runState === "running" || isStaging}
               />
-              <button
-                className="rt-square-button"
-                onClick={runLiveCapture}
-                disabled={solariState !== "ready" || !url.trim()}
-                aria-label="Analyze URL with Solari"
-              >
-                <ArrowUpRight aria-hidden="true" size={17} />
-              </button>
             </div>
             <input
               ref={fileInput}
@@ -332,6 +483,7 @@ export function RoleTruthWorkspace() {
             <button
               className="rt-drop-button"
               onClick={() => fileInput.current?.click()}
+              disabled={runState === "running" || isStaging}
             >
               <Upload aria-hidden="true" size={17} />
               <span>
@@ -339,6 +491,10 @@ export function RoleTruthWorkspace() {
                 <small>PNG, JPG or WebP · up to 8 sources</small>
               </span>
             </button>
+            <p className="rt-upload-privacy">
+              Screenshots are OCRed for this run. Review them for personal
+              information before exporting or sharing a report.
+            </p>
             {stagedFiles.length > 0 && (
               <ul className="rt-staged-list" aria-label="Staged screenshots">
                 {stagedFiles.map((file) => (
@@ -350,12 +506,45 @@ export function RoleTruthWorkspace() {
                         {formatBytes(file.size)} · {shortHash(file.sha256)}
                       </small>
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => removeStagedFile(file.sha256)}
+                      aria-label={`Remove ${file.name}`}
+                      disabled={runState === "running" || isStaging}
+                    >
+                      <X aria-hidden="true" size={13} />
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
+            <button
+              className="rt-button rt-button--analyze"
+              onClick={runLiveCapture}
+              disabled={
+                solariState !== "ready" ||
+                runState === "running" ||
+                isStaging ||
+                (!url.trim() && stagedFiles.length === 0)
+              }
+            >
+              {runState === "running" || isStaging ? (
+                <LoaderCircle className="rt-spin" aria-hidden="true" size={16} />
+              ) : (
+                <ScanText aria-hidden="true" size={16} />
+              )}
+              {isStaging
+                ? "Preparing screenshots…"
+                : runState === "running"
+                  ? "Analyzing evidence…"
+                  : "Analyze evidence"}
+            </button>
             {liveStatus && (
-              <p className="rt-live-status" role="status" aria-live="polite">
+              <p
+                className={`rt-live-status rt-live-status--${runState}`}
+                role="status"
+                aria-live="polite"
+              >
                 {liveStatus}
               </p>
             )}
@@ -371,10 +560,13 @@ export function RoleTruthWorkspace() {
                 checked={includeConflict}
                 onCheckedChange={(checked) => {
                   setLiveReport(null);
+                  setRunState("idle");
+                  setLiveStatus("");
                   setIncludeConflict(checked);
                   setSelectedField("work_mode");
                 }}
                 aria-label="Inject a synthetic onsite contradiction"
+                disabled={runState === "running" || isStaging}
                 className="rt-switch"
               />
             </div>
@@ -387,7 +579,9 @@ export function RoleTruthWorkspace() {
           <section className="rt-panel-section rt-source-stack">
             <div className="rt-section-heading">
               <h2>Source manifest</h2>
-              <span>{report.sources.length}/8</span>
+              <span>
+                {usableSources}/{report.sources.length} usable
+              </span>
             </div>
             <ul>
               {report.sources.map((source, index) => (
@@ -399,29 +593,86 @@ export function RoleTruthWorkspace() {
                   <span className="rt-source-copy">
                     <strong>{source.label}</strong>
                     <small>
-                      {source.author} · {source.authority}
+                      {source.author} · {sourceStateLabel(source)}
                     </small>
                   </span>
-                  <CheckCircle2
-                    className="rt-source-ok"
-                    aria-label="Evidence eligible"
-                    size={16}
-                  />
+                  {source.acquisitionStatus === undefined ||
+                  source.acquisitionStatus === "usable" ? (
+                    <CheckCircle2
+                      className="rt-source-ok"
+                      aria-label="Evidence usable"
+                      size={16}
+                    />
+                  ) : (
+                    <AlertTriangle
+                      className="rt-source-rejected"
+                      aria-label={sourceStateLabel(source)}
+                      size={16}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
           </section>
         </aside>
 
-        <section className="rt-report" aria-label="RoleTruth report">
+        <section
+          className={`rt-report ${
+            runState === "running" ? "rt-report--running" : ""
+          }`}
+          aria-label="RoleTruth report"
+          aria-busy={runState === "running"}
+        >
+          {runState === "running" && (
+            <div className="rt-run-banner rt-run-banner--running">
+              <LoaderCircle className="rt-spin" aria-hidden="true" size={18} />
+              <div>
+                <strong>Building a new evidence report</strong>
+                <span>Browser capture → screenshot OCR → Sandbox verification</span>
+              </div>
+            </div>
+          )}
+          {runState === "error" && (
+            <div className="rt-run-banner rt-run-banner--error" role="alert">
+              <AlertTriangle aria-hidden="true" size={18} />
+              <div>
+                <strong>The new analysis failed</strong>
+                <span>
+                  No new report was created. The reproducible demo is shown
+                  below; review the intake error and retry.
+                </span>
+              </div>
+            </div>
+          )}
+          {liveReport && liveReport.analysisStatus !== "complete" && (
+            <div
+              className={`rt-run-banner rt-run-banner--${liveReport.analysisStatus}`}
+            >
+              <AlertTriangle aria-hidden="true" size={18} />
+              <div>
+                <strong>
+                  {liveReport.analysisStatus === "partial"
+                    ? "Partial evidence report"
+                    : "No usable job posting found"}
+                </strong>
+                <span>
+                  {liveReport.diagnostics?.[0] ??
+                    "Review source diagnostics before relying on this report."}
+                </span>
+              </div>
+            </div>
+          )}
           <header className="rt-report-header">
             <div>
               <div className="rt-eyebrow">
                 Report / {report.id.replaceAll("-", " ")}
               </div>
-              <h2>Solari SWE internship</h2>
+              <h2>{reportTitle(report)}</h2>
               <p>
-                Direct-source role terms · captured{" "}
+                {report.mode === "solari-live"
+                  ? `${report.analysisStatus ?? "complete"} evidence report`
+                  : "Direct-source role terms"}{" "}
+                · captured{" "}
                 {new Date(report.createdAt).toLocaleString("en-US", {
                   month: "short",
                   day: "numeric",
@@ -538,7 +789,12 @@ export function RoleTruthWorkspace() {
                   (span) => span.sourceId === source.id,
                 );
                 return (
-                  <article key={source.id} className="rt-ledger-entry">
+                  <article
+                    key={source.id}
+                    className={`rt-ledger-entry rt-ledger-entry--${
+                      source.acquisitionStatus ?? "reviewed"
+                    }`}
+                  >
                     <div className="rt-ledger-number">
                       {String(index + 1).padStart(2, "0")}
                     </div>
@@ -549,11 +805,18 @@ export function RoleTruthWorkspace() {
                           <h3>{source.label}</h3>
                           <p>
                             {source.author} · {source.publisher} ·{" "}
-                            {source.authority}
+                            {sourceStateLabel(source)}
                           </p>
                         </div>
                         {source.synthetic && (
                           <span className="rt-test-label">Test only</span>
+                        )}
+                        {source.acquisitionStatus && (
+                          <span
+                            className={`rt-source-quality rt-source-quality--${source.acquisitionStatus}`}
+                          >
+                            {sourceStateLabel(source)}
+                          </span>
                         )}
                       </div>
                       <dl className="rt-ledger-meta">
@@ -569,7 +832,33 @@ export function RoleTruthWorkspace() {
                           <dt>Eligible spans</dt>
                           <dd>{sourceEvidence.length}</dd>
                         </div>
+                        {typeof source.ocrConfidence === "number" && (
+                          <div>
+                            <dt>OCR confidence</dt>
+                            <dd>{source.ocrConfidence.toFixed(0)}%</dd>
+                          </div>
+                        )}
+                        {source.requestedUrl && (
+                          <div>
+                            <dt>Requested URL</dt>
+                            <dd title={source.requestedUrl}>
+                              {source.requestedUrl}
+                            </dd>
+                          </div>
+                        )}
+                        {source.finalUrl &&
+                          source.finalUrl !== source.requestedUrl && (
+                            <div>
+                              <dt>Final URL</dt>
+                              <dd title={source.finalUrl}>{source.finalUrl}</dd>
+                            </div>
+                          )}
                       </dl>
+                      {source.diagnostics?.map((diagnostic) => (
+                        <p className="rt-ledger-diagnostic" key={diagnostic}>
+                          {diagnostic}
+                        </p>
+                      ))}
                       {sourceEvidence.map((span) => (
                         <blockquote key={span.id}>“{span.quote}”</blockquote>
                       ))}
@@ -600,7 +889,7 @@ export function RoleTruthWorkspace() {
                     number: "03",
                     Icon: TerminalSquare,
                     title: "Reconcile",
-                    text: "Solari Sandbox runs the deterministic rules. The model may propose assertions; it cannot assign verdicts.",
+                    text: "Common role terms and JobPosting data become candidate assertions. Solari Sandbox verifies each exact quote before deterministic rules assign a verdict.",
                   },
                   {
                     number: "04",

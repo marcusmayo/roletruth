@@ -1,17 +1,15 @@
 /**
- * Pure-Python, stdlib-only reconciliation executed inside a Solari Sandbox.
- *
- * The sandbox receives browser captures and emits the same report contract as
- * the local golden fixture. Extraction is deliberately narrow; unsupported
- * language remains Unknown instead of being guessed.
+ * Deterministic evidence verifier and reconciler executed inside a Solari
+ * Sandbox. The application may propose candidate assertions, but this script
+ * admits one only when its exact quotation round-trips to a sealed source.
  */
 export const SOLARI_RECONCILE_SCRIPT = String.raw`
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 
 INPUT_PATH = sys.argv[1]
 OUTPUT_PATH = sys.argv[2]
@@ -19,163 +17,175 @@ OUTPUT_PATH = sys.argv[2]
 with open(INPUT_PATH, "r", encoding="utf-8") as handle:
     captures = json.load(handle)
 
-sources = []
-evidence = []
-assertions = []
-
-def compact(value):
-    return re.sub(r"\s+", " ", value).strip()
-
-def quote_for(text, match, radius=105):
-    start = max(0, match.start() - radius)
-    end = min(len(text), match.end() + radius)
-    return compact(text[start:end])[:420]
-
-def add_assertion(source_id, text, field, pattern, normalized, display, suffix, flags=re.I):
-    match = re.search(pattern, text, flags)
-    if not match:
-        return False
-    evidence_id = f"ev-{source_id}-{suffix}"
-    evidence.append({
-        "id": evidence_id,
-        "sourceId": source_id,
-        "quote": quote_for(text, match),
-        "location": f"Rendered body text · characters {match.start()}–{match.end()}",
-        "eligible": True,
-    })
-    assertions.append({
-        "id": f"as-{source_id}-{suffix}",
-        "field": field,
-        "rawValue": compact(match.group(0)),
-        "normalizedValue": normalized,
-        "displayValue": display,
-        "evidenceId": evidence_id,
-    })
-    return True
-
-for index, capture in enumerate(captures, start=1):
-    source_id = f"src-live-{index}"
-    text = capture["text"][:200000]
-    final_url = capture["finalUrl"]
-    host = urlparse(final_url).hostname or "Captured page"
-    sources.append({
-        "id": source_id,
-        "label": capture.get("title") or host,
-        "publisher": host,
-        "author": "Rendered page",
-        "kind": "url",
-        "authority": "third-party",
-        "url": final_url,
-        "requestedUrl": capture["requestedUrl"],
-        "finalUrl": final_url,
-        "capturedAt": capture["capturedAt"],
-        "sha256": capture["textSha256"],
-        "textSha256": capture["textSha256"],
-        "screenshotSha256": capture["screenshotSha256"],
-        "browserSessionId": capture["browserSessionId"],
-    })
-
-    add_assertion(
-        source_id, text, "role_title",
-        r"\b(?:SWE|software\s+engineering|software\s+engineer)\s+intern(?:ship)?\b",
-        "swe-intern", "SWE intern", "role"
-    )
-
-    add_assertion(
-        source_id, text, "work_mode",
-        r"\b(?:fully\s+remote|remote\s+(?:role|position|work))\b",
-        "remote", "Remote", "remote"
-    )
-    add_assertion(
-        source_id, text, "work_mode",
-        r"\b(?:hybrid|(?:one|two|three|four|five|\d+)\s+days?[^.\n]{0,24}(?:onsite|on-site|in[- ]office))\b",
-        "hybrid-onsite", "Hybrid / onsite cadence", "hybrid"
-    )
-
-    add_assertion(
-        source_id, text, "relocation_required",
-        r"\b(?:no\s+relocation\s+(?:is\s+)?required|do\s+i\s+have\s+to\s+be\s+based[^?]{0,80}\?[^.\n]{0,80}remote\s+role)\b",
-        "not-required", "Not required", "relocation"
-    )
-
-    compensation = re.search(
-        r"\$?\s*([0-9]{2,3}(?:,[0-9]{3})?|[0-9]{2,3})\s*([kK])?[^.\n]{0,28}\bannuali[sz]ed\b",
-        text,
-        re.I,
-    )
-    if compensation:
-        amount = int(compensation.group(1).replace(",", ""))
-        if compensation.group(2):
-            amount *= 1000
-        display = "$" + format(amount, ",.0f") + " annualized"
-        add_assertion(
-            source_id, text, "compensation_basis",
-            re.escape(compensation.group(0)),
-            f"usd-{amount}-annualized", display, "compensation", flags=0
-        )
-
-    add_assertion(
-        source_id, text, "duration",
-        r"\b(?:the\s+)?(?:engagement|internship|term)\s+(?:is|lasts|runs)\s+(?:for\s+)?([0-9]+)\s+months?\b",
-        "explicit-fixed-term", "Explicit fixed term", "duration"
-    )
-
-    add_assertion(
-        source_id, text, "application_materials",
-        r"\b(?:do\s+not|don't|dont)\s+(?:want|require|need)[^.\n]{0,70}(?:resume|résumé)[^.\n]{0,90}(?:grades|cover\s*letter)\b",
-        "resume-cover-letter-grades-not-requested",
-        "Résumé, cover letter, and grades not requested",
-        "materials"
-    )
-
-    if all(term in text.lower() for term in ["fork", "build", "publish", "linkedin"]):
-        add_assertion(
-            source_id, text, "application_steps",
-            r"(?is)fork[^\n]{0,100}\n.{0,60}build.{0,170}\n.{0,60}publish.{0,170}\n.{0,60}(?:share|post).{0,100}(?:linkedin|\bx\b)",
-            "fork-build-publish-share-tag",
-            "Fork → build → publish → post + tag",
-            "steps"
-        )
-
-    add_assertion(
-        source_id, text, "deadline",
-        r"\bis\s+there\s+a\s+deadline\s*\?\s*no\b|\bno\s+(?:fixed\s+)?deadline\b",
-        "no-fixed-deadline", "No fixed deadline", "deadline"
-    )
-
-    add_assertion(
-        source_id, text, "evaluation_signal",
-        r"\bgenuine\s+uses?[^.\n]{0,80}solv(?:e|es|ing)\s+problems?\b",
-        "genuine-problem-and-market-fit",
-        "A genuine problem and evidence people want it",
-        "evaluation"
-    )
-
-definitions = [
-    ("role_title", "Role", "Role", "The rendered source does not explicitly name a supported role."),
-    ("work_mode", "Work mode", "Location", "No eligible source explicitly states a supported work mode."),
+DEFINITIONS = [
+    ("company_name", "Company", "Role", "The supplied sources do not explicitly name the company."),
+    ("role_title", "Role", "Role", "The supplied sources do not explicitly name the role."),
+    ("work_mode", "Work mode", "Location", "No eligible source explicitly states the work mode."),
+    ("job_location", "Location", "Location", "No eligible source explicitly states the job location."),
     ("relocation_required", "Relocation", "Location", "Relocation expectations are not explicit."),
-    ("compensation_basis", "Compensation basis", "Compensation", "No eligible source states a supported compensation amount and basis."),
-    ("actual_paid_total", "Actual paid total", "Compensation", "The actual term and full-time equivalency are not established."),
+    ("compensation_basis", "Compensation basis", "Compensation", "No eligible source states compensation and its basis."),
+    ("actual_paid_total", "Actual paid total", "Compensation", "The actual term, schedule, and payable total are not established."),
     ("duration", "Engagement duration", "Engagement", "A fixed engagement duration is not explicit."),
-    ("employment_type", "Employment classification", "Engagement", "Employee versus contractor status and schedule are not explicit."),
+    ("employment_type", "Employment classification", "Engagement", "Employee, contractor, and schedule terms are not explicit."),
+    ("experience_required", "Experience", "Requirements", "No explicit minimum experience requirement was found."),
+    ("education_required", "Education", "Requirements", "No explicit education requirement was found."),
     ("application_materials", "Application materials", "Application", "Required application materials are not explicit."),
     ("application_steps", "Application steps", "Application", "A complete supported application path was not found."),
     ("deadline", "Deadline", "Application", "No eligible source explicitly addresses a deadline."),
-    ("evaluation_signal", "What the build must prove", "Application", "The supported evaluation signal was not found."),
+    ("evaluation_signal", "Selection criteria", "Application", "Explicit selection criteria were not found."),
 ]
 
-questions_by_field = {
-    "work_mode": "Can you confirm whether this may be performed fully remotely and whether any onsite cadence applies?",
+QUESTIONS = {
+    "work_mode": "Can you confirm whether this may be performed fully remotely from Virginia and whether any onsite cadence applies?",
+    "job_location": "What location restrictions or approved working states apply to this role?",
     "relocation_required": "Is relocation required at any point in the engagement?",
     "actual_paid_total": "What gross compensation applies to the actual engagement term and expected full-time equivalency?",
     "duration": "Is the engagement fixed-term or ongoing?",
-    "employment_type": "Is the worker classification employee or contractor, and is the schedule full-time or part-time?",
+    "employment_type": "Is this employee or contractor work, and is the schedule full-time or part-time?",
     "deadline": "Is there a target date for reviewing submissions?",
 }
 
+ALLOWED_FIELDS = {item[0] for item in DEFINITIONS}
+sources = []
+evidence = []
+assertions = []
+diagnostics = []
+
+def compact(value):
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+def safe_text(value, limit):
+    return compact(value)[:limit]
+
+def exact_text(value, limit):
+    return str(value).strip()[:limit]
+
+def verify_image(capture):
+    image_path = capture.get("imagePath")
+    expected = capture.get("screenshotSha256")
+    if not image_path or not expected:
+        return False, "No sealed source image was supplied to the Sandbox."
+    if not os.path.isfile(image_path):
+        return False, "The sealed source image was not present in the Sandbox."
+    digest = hashlib.sha256()
+    with open(image_path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected:
+        return False, "The source image hash did not match the intake receipt."
+    return True, None
+
+def verify_text(capture):
+    sealed_text = capture.get("sealedText", "")
+    expected = capture.get("textSha256", "")
+    actual = hashlib.sha256(sealed_text.encode("utf-8")).hexdigest()
+    return bool(expected) and actual == expected
+
+def candidate_value_is_consistent(field, raw, normalized):
+    """Recompute safety-critical normalizations from the quoted raw phrase."""
+    lowered = compact(raw).lower()
+    if field == "work_mode":
+        if re.search(r"not\s+(?:a\s+)?remote|not\s+eligible\s+for\s+remote|remote.+not\s+(?:available|permitted)|remote\s+candidates?.+not\s+(?:accepted|eligible|considered)|no\s+remote\s+candidates?|does\s+not\s+(?:allow|permit|support)\s+remote|cannot\s+work\s+remotely", lowered):
+            expected = "not-remote"
+        elif "hybrid" in lowered and not re.search(r"not\s+(?:a\s+)?hybrid", lowered):
+            expected = "hybrid"
+        elif "remote" in lowered or "work from home" in lowered:
+            expected = "remote"
+        elif re.search(r"on[- ]?site|in[- ]office", lowered):
+            expected = "onsite"
+        else:
+            return False
+        return normalized == expected
+    if field == "relocation_required":
+        expected = "not-required" if re.search(r"no\s+relocation|not\s+required|do\s+not\s+need", lowered) else "required"
+        return normalized == expected
+    return True
+
+for index, capture in enumerate(captures, start=1):
+    source_id = capture.get("sourceId") or f"src-live-{index}"
+    sealed_text = capture.get("sealedText", "")[:300000]
+    status = capture.get("acquisitionStatus", "error")
+    document_type = capture.get("documentType", "unknown")
+    image_verified, image_error = verify_image(capture)
+    text_verified = verify_text(capture)
+    source_diagnostics = [safe_text(item, 240) for item in capture.get("diagnostics", []) if item]
+
+    if image_error:
+        source_diagnostics.append(image_error)
+    if not text_verified:
+        source_diagnostics.append("The sealed text hash did not match the intake receipt.")
+    integrity_verified = image_verified and text_verified
+    if not integrity_verified and status == "usable":
+        status = "error"
+
+    for item in source_diagnostics:
+        diagnostics.append(f"{capture.get('label') or source_id}: {item}")
+
+    source = {
+        "id": source_id,
+        "label": safe_text(capture.get("label") or "Captured source", 140),
+        "publisher": safe_text(capture.get("publisher") or "Uploaded evidence", 100),
+        "author": safe_text(capture.get("author") or "Captured source", 100),
+        "kind": capture.get("kind", "url"),
+        "authority": capture.get("authority", "third-party"),
+        "capturedAt": capture.get("capturedAt"),
+        "sha256": capture.get("screenshotSha256") or capture.get("textSha256"),
+        "textSha256": capture.get("textSha256"),
+        "screenshotSha256": capture.get("screenshotSha256"),
+        "browserSessionId": capture.get("browserSessionId"),
+        "acquisitionStatus": status,
+        "documentType": document_type,
+        "eligibleForRoleTerms": bool(capture.get("eligibleForRoleTerms")) and status == "usable" and integrity_verified,
+        "diagnostics": source_diagnostics,
+        "httpStatus": capture.get("httpStatus"),
+        "textLength": len(sealed_text),
+        "ocrConfidence": capture.get("ocrConfidence"),
+    }
+    if capture.get("requestedUrl"):
+        source["requestedUrl"] = capture["requestedUrl"]
+    if capture.get("finalUrl"):
+        source["finalUrl"] = capture["finalUrl"]
+        source["url"] = capture["finalUrl"]
+    sources.append(source)
+
+    for candidate_index, candidate in enumerate(capture.get("candidateAssertions", []), start=1):
+        field = candidate.get("field")
+        quote = candidate.get("quote", "")
+        normalized = safe_text(candidate.get("normalizedValue", ""), 180)
+        display = safe_text(candidate.get("displayValue", ""), 240)
+        raw = safe_text(candidate.get("rawValue", ""), 240)
+
+        if field not in ALLOWED_FIELDS or not quote or not normalized or not display:
+            continue
+        company_context = field == "company_name" and document_type == "company_profile" and status == "not_job"
+        if not (source["eligibleForRoleTerms"] or company_context):
+            continue
+        if not integrity_verified or quote not in sealed_text:
+            diagnostics.append(f"Rejected unsupported {field} proposal from {source['label']}.")
+            continue
+        if compact(raw).lower() not in compact(quote).lower() or not candidate_value_is_consistent(field, raw, normalized):
+            diagnostics.append(f"Rejected value-inconsistent {field} proposal from {source['label']}.")
+            continue
+
+        evidence_id = f"ev-{source_id}-{field}-{candidate_index}"
+        evidence.append({
+            "id": evidence_id,
+            "sourceId": source_id,
+            "quote": exact_text(quote, 520),
+            "location": safe_text(candidate.get("location", "Sealed source text"), 180),
+            "eligible": True,
+        })
+        assertions.append({
+            "id": f"as-{source_id}-{field}-{candidate_index}",
+            "field": field,
+            "rawValue": raw,
+            "normalizedValue": normalized,
+            "displayValue": display,
+            "evidenceId": evidence_id,
+        })
+
 findings = []
-for field, label, group, unknown_reason in definitions:
+for field, label, group, unknown_reason in DEFINITIONS:
     field_assertions = [item for item in assertions if item["field"] == field]
     values = {}
     for assertion in field_assertions:
@@ -199,72 +209,68 @@ for field, label, group, unknown_reason in definitions:
             "group": group,
             "status": "confirmed",
             "conclusion": field_assertions[0]["displayValue"],
-            "explanation": "At least one eligible explicit assertion exists and every other eligible assertion is compatible.",
-            "evidenceIds": sorted(set(item["evidenceId"] for item in field_assertions)),
-            "ruleId": "RT-R1 · explicit + compatible",
+            "explanation": "Every eligible assertion is explicit, source-linked, and compatible.",
+            "evidenceIds": sorted({item["evidenceId"] for item in field_assertions}),
+            "ruleId": "RT-R1 · explicit + verified + compatible",
         }
     else:
+        display_values = [grouped[0]["displayValue"] for grouped in values.values()]
         finding = {
             "field": field,
             "label": label,
             "group": group,
             "status": "conflicted",
-            "conclusion": " ↔ ".join(group[0]["displayValue"] for group in values.values()),
-            "explanation": "Eligible explicit assertions are materially incompatible. Authority cannot erase a contradiction.",
-            "evidenceIds": sorted(set(item["evidenceId"] for item in field_assertions)),
+            "conclusion": " ↔ ".join(display_values),
+            "explanation": "Verified evidence is materially incompatible; the disagreement remains visible.",
+            "evidenceIds": sorted({item["evidenceId"] for item in field_assertions}),
             "ruleId": "RT-R2 · incompatible evidence preserved",
         }
 
-    if finding["status"] in ("unknown", "conflicted") and field in questions_by_field:
-        finding["question"] = questions_by_field[field]
+    if finding["status"] in ("unknown", "conflicted") and field in QUESTIONS:
+        finding["question"] = QUESTIONS[field]
     findings.append(finding)
 
-calculations = []
-comp_assertions = [item for item in assertions if item["field"] == "compensation_basis"]
-if comp_assertions and "usd-300000-annualized" in {item["normalizedValue"] for item in comp_assertions}:
-    scenario = {
-        "field": "three_month_full_time_scenario",
-        "label": "3-month full-time scenario",
-        "group": "Compensation",
-        "status": "calculated",
-        "conclusion": "$75,000",
-        "explanation": "A transparent scenario derived from the annualized rate. It is not a quoted or promised payout.",
-        "evidenceIds": [comp_assertions[0]["evidenceId"]],
-        "ruleId": "RT-C1 · 300,000 × 3/12 × 1.0 FTE",
-    }
-    insert_at = next((i for i, item in enumerate(findings) if item["field"] == "actual_paid_total"), len(findings))
-    findings.insert(insert_at, scenario)
-    calculations.append({
-        "id": "calc-three-month",
-        "label": "Three-month full-time scenario",
-        "formula": "$300,000 / year × 3 / 12 × 1.0 FTE",
-        "inputs": [
-            {"label": "Annualized rate", "value": "$300,000", "evidenceId": comp_assertions[0]["evidenceId"]},
-            {"label": "Scenario term", "value": "3 months"},
-            {"label": "Scenario FTE", "value": "1.0"},
-        ],
-        "result": "$75,000",
-        "disclaimer": "Derived scenario only. Actual duration and schedule remain unknown.",
-    })
+def confirmed_value(field):
+    finding = next((item for item in findings if item["field"] == field), None)
+    return finding["conclusion"] if finding and finding["status"] == "confirmed" else None
+
+usable_sources = [item for item in sources if item["acquisitionStatus"] == "usable"]
+rejected_sources = [item for item in sources if item["acquisitionStatus"] != "usable"]
+role_term_assertions = [item for item in assertions if item["field"] != "company_name"]
+
+if not usable_sources or not role_term_assertions:
+    analysis_status = "insufficient"
+    if not usable_sources:
+        diagnostics.append("No source supplied usable role terms. Add the actual job-post URL, screenshots, or recruiter message.")
+else:
+    analysis_status = "partial" if rejected_sources else "complete"
 
 questions = [
     item["question"] for item in findings
     if item.get("question") and item["status"] in ("unknown", "conflicted")
 ]
 
+source_fingerprint = "".join(sorted(item.get("sha256") or "" for item in sources))
+report_suffix = hashlib.sha256(source_fingerprint.encode("utf-8")).hexdigest()[:12]
 report = {
-    "id": "rt-solari-live",
-    "engineVersion": "0.1.0-sandbox",
+    "id": f"rt-live-{report_suffix}",
+    "engineVersion": "0.2.0-sandbox",
     "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "mode": "solari-live",
+    "analysisStatus": analysis_status,
+    "subject": {
+        "roleTitle": confirmed_value("role_title"),
+        "companyName": confirmed_value("company_name"),
+    },
+    "diagnostics": list(dict.fromkeys(diagnostics)),
     "sources": sources,
     "evidence": evidence,
     "assertions": assertions,
     "findings": findings,
-    "calculations": calculations,
-    "questions": questions,
+    "calculations": [],
+    "questions": list(dict.fromkeys(questions)),
     "runtime": {
-        "browserSessionId": captures[0]["browserSessionId"] if captures else None,
+        "browserSessionId": next((item.get("browserSessionId") for item in captures if item.get("browserSessionId")), None),
         "sandboxId": None,
         "sandboxExitCode": None,
     },
