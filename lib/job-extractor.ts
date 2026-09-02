@@ -448,6 +448,25 @@ export function extractJobCandidates(capture: LiveCaptureData) {
     structured?.validThrough,
   );
 
+  const atsPageTitle = /(?:^|\n)Page title:\s*([^\n|]{3,100}?)(?:\s+Job Details?)?\s*\|\s*([^\n|]{2,100})\s*(?:\n|$)/i.exec(
+    text,
+  );
+  if (
+    atsPageTitle &&
+    !candidates.some((item) => item.field === "company_name")
+  ) {
+    addFromMatch(
+      candidates,
+      text,
+      atsPageTitle,
+      "company_name",
+      atsPageTitle[2],
+      slug(atsPageTitle[2]),
+      atsPageTitle[2],
+      "Page metadata",
+    );
+  }
+
   if (!candidates.some((item) => item.field === "role_title")) {
     const labeledRole = /(?:^|\n)\s*(?:job title|position title|role)\s*[:\-]\s*([^\n|]{3,100})/im.exec(
       text,
@@ -456,6 +475,7 @@ export function extractJobCandidates(capture: LiveCaptureData) {
       text,
     );
     const metadataHeading = /(?:^|\n)Heading:\s*([^\n]{3,100})/i.exec(text);
+    const metadataTitle = atsPageTitle;
     const screenshotHeading =
       capture.kind === "screenshot"
         ? /(?:^|\n)[ \t]*((?:(?:Senior|Sr\.?|Junior|Jr\.?|Lead|Principal|Staff|Associate|Assistant|Head|Chief)[ \t]+)?(?:[A-Z][A-Za-z0-9+/#.&'-]*[ \t]+){0,6}(?:Engineer|Manager|Analyst|Coordinator|Designer|Director|Developer|Architect|Scientist|Specialist|Consultant|Administrator|Technician|Recruiter|Executive|Counsel|Accountant|Intern))[ \t]*(?:\n|$)/m.exec(
@@ -467,6 +487,7 @@ export function extractJobCandidates(capture: LiveCaptureData) {
     const role =
       labeledRole ??
       hiringRole ??
+      metadataTitle ??
       (metadataHeading && !genericHeadings.test(compact(metadataHeading[1]))
         ? metadataHeading
         : null) ??
@@ -519,6 +540,9 @@ export function extractJobCandidates(capture: LiveCaptureData) {
   }
 
   if (!candidates.some((item) => item.field === "work_mode")) {
+    const labeledWorkMode = /(?:^|\n)\s*(?:remote\s*\/\s*hybrid\s*\/\s*on[- ]?site|work\s*mode|workplace\s*type)\s*[:\-]\s*(remote|hybrid|on[- ]?site|in[- ]?office)\b/im.exec(
+      text,
+    );
     const hybrid = /\bhybrid(?:\s+(?:role|position|schedule))?(?:[^.\n]{0,60}(\d+)\s+days?[^.\n]{0,30}(?:on[- ]?site|in[- ]office))?/i.exec(
       text,
     );
@@ -535,16 +559,29 @@ export function extractJobCandidates(capture: LiveCaptureData) {
       text,
     );
     const positiveHybrid = notHybrid ? null : hybrid;
-    const workMode = notRemote ?? positiveHybrid ?? remote ?? onsite;
+    const workMode = labeledWorkMode ?? notRemote ?? positiveHybrid ?? remote ?? onsite;
     if (workMode) {
-      const normalized = positiveHybrid
+      const labeledValue = labeledWorkMode?.[1] ?? null;
+      const normalized = labeledValue
+        ? /remote/i.test(labeledValue)
+          ? "remote"
+          : /hybrid/i.test(labeledValue)
+            ? "hybrid"
+            : "onsite"
+        : positiveHybrid
         ? "hybrid"
         : notRemote
           ? "not-remote"
           : remote
             ? "remote"
             : "onsite";
-      const display = positiveHybrid
+      const display = labeledValue
+        ? normalized === "onsite"
+          ? "Onsite"
+          : normalized === "hybrid"
+            ? "Hybrid"
+            : "Remote"
+        : positiveHybrid
         ? positiveHybrid[1]
           ? `Hybrid — ${positiveHybrid[1]} days onsite`
           : "Hybrid"
@@ -558,7 +595,7 @@ export function extractJobCandidates(capture: LiveCaptureData) {
         text,
         workMode,
         "work_mode",
-        workMode[0],
+        labeledValue ?? workMode[0],
         normalized,
         display,
         "Rendered text",
@@ -668,7 +705,7 @@ export function extractJobCandidates(capture: LiveCaptureData) {
   }
 
   if (!candidates.some((item) => item.field === "employment_type")) {
-    const labeledEmployment = /(?:^|\n)\s*employment\s+type\s*[:\-]\s*(?:(W-?2|1099)\s+)?(full[- ]time|part[- ]time|contract(?:or)?|temporary|permanent|internship)\b/im.exec(
+    const labeledEmployment = /(?:^|\n)\s*(?:employment|contract)\s+type\s*[:\-]\s*(?:(W-?2|1099)\s+)?(full[- ]time|part[- ]time|contract(?:or)?|temporary|permanent|internship)\b/im.exec(
       text,
     );
     const classifiedEmployment = /\b(W-?2|1099)\s+(full[- ]time|part[- ]time|contract(?:or)?|temporary|permanent|internship)\b/i.exec(
@@ -710,7 +747,10 @@ export function extractJobCandidates(capture: LiveCaptureData) {
   const experienceSuffix = /\b((\d+\+?|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:\+\s*)?years?(?:\s+(?:of\s+)?(?:relevant\s+|professional\s+)?experience)?)\s+(?:is\s+)?(?:required|minimum|must-have)\b/i.exec(
     text,
   );
-  const experience = experiencePrefix ?? experienceSuffix;
+  const experienceSection = /(?:^|\n)\s*Experience\s*:\s*(?:\n\s*)?(?:[•\-*]\s*)?((?:\+\s*)?(\d+)\s*years?\s+in\s+[^.\n]{2,100})/im.exec(
+    text,
+  );
+  const experience = experiencePrefix ?? experienceSuffix ?? experienceSection;
   if (experience) {
     const amount = numberFrom(experience[2]);
     const display = `${amount} years experience`;
@@ -732,7 +772,10 @@ export function extractJobCandidates(capture: LiveCaptureData) {
   const educationSuffix = /\b((?:bachelor(?:'s)?|master(?:'s)?|associate(?:'s)?|doctoral|ph\.?d\.?|high school)(?:\s+(?:degree|diploma))?(?:\s+in\s+[^.;\n]{2,70})?)\s+(?:is\s+)?(?:required|minimum|must-have)\b/i.exec(
     text,
   );
-  const education = educationPrefix ?? educationSuffix;
+  const educationSection = /(?:Requirements\s+for\s+the\s+job[\s\S]{0,500}?Education[^:\n]*:\s*(?:\n\s*)?(?:[•\-*]\s*)?)((?:Degree|Diploma)\s+in\s+[^.\n]{2,100})/i.exec(
+    text,
+  );
+  const education = educationPrefix ?? educationSuffix ?? educationSection;
   if (education) {
     addFromMatch(
       candidates,

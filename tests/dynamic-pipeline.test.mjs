@@ -440,6 +440,68 @@ test("generic extractor handles a labeled contract duration with the noun first"
   );
 });
 
+test("Trivium ATS labels take precedence over keywords embedded in labels", async () => {
+  const { extractor } = await pipelineModules();
+  const text = [
+    "Job Alerts Link",
+    "APPLY NOW",
+    "IT Business Analyst",
+    "Job Location: Youngstown",
+    "Contract Type: Permanent",
+    "Remote/Hybrid/Onsite: On-site",
+    "Req Id: 39602",
+    "",
+    "Role Description",
+    "As part of the IT Applications Team, you will serve as a bridge between business and technology.",
+    "Requirements for the job",
+    "Education & Training / Skills:",
+    "• Degree in Business Management or Computer Science.",
+    "Experience:",
+    "• +5 years in applications (ERP / MES / SPC / Scheduling).",
+    "",
+    "[Page metadata]",
+    "Page title: IT Business Analyst Job Details | Trivium Packaging",
+    "Heading: IT Business Analyst",
+  ].join("\n");
+  const assertions = extractor.extractJobCandidates(
+    usableCapture(text, {
+      requestedUrl:
+        "https://careers.triviumpackaging.com/job/IT-Business-Analyst/39602-en_US",
+      finalUrl:
+        "https://careers.triviumpackaging.com/job/IT-Business-Analyst/39602-en_US",
+    }),
+  );
+
+  assert.equal(
+    assertionByField(assertions, "role_title")?.displayValue,
+    "IT Business Analyst",
+  );
+  assert.equal(
+    assertionByField(assertions, "company_name")?.displayValue,
+    "Trivium Packaging",
+  );
+  assert.equal(
+    assertionByField(assertions, "job_location")?.displayValue,
+    "Youngstown",
+  );
+  assert.equal(
+    assertionByField(assertions, "work_mode")?.normalizedValue,
+    "onsite",
+  );
+  assert.equal(
+    assertionByField(assertions, "employment_type")?.normalizedValue,
+    "permanent",
+  );
+  assert.equal(
+    assertionByField(assertions, "experience_required")?.displayValue,
+    "5 years experience",
+  );
+  assert.equal(
+    assertionByField(assertions, "education_required")?.displayValue,
+    "Degree in Business Management or Computer Science",
+  );
+});
+
 test("generic extractor abstains when a bachelor's degree is preferred but explicitly not required", async () => {
   const { extractor } = await pipelineModules();
   const text = [
@@ -820,7 +882,7 @@ test("Sandbox reconciler exposes URL-versus-screenshot work-mode conflict with b
   const workMode = report.findings.find(
     (finding) => finding.field === "work_mode",
   );
-  assert.equal(report.analysisStatus, "complete");
+  assert.equal(report.analysisStatus, "partial");
   assert.equal(workMode.status, "conflicted");
   assert.match(workMode.conclusion, /Remote/);
   assert.match(workMode.conclusion, /Hybrid/);

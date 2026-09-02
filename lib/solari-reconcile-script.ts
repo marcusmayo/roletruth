@@ -247,7 +247,8 @@ if not usable_sources or not role_term_assertions:
     if not usable_sources:
         diagnostics.append("No source supplied usable role terms. Add the actual job-post URL, screenshots, or recruiter message.")
 else:
-    analysis_status = "partial" if rejected_sources else "complete"
+    unresolved_findings = [item for item in findings if item["status"] in ("unknown", "conflicted")]
+    analysis_status = "partial" if rejected_sources or unresolved_findings else "complete"
 
 questions = [
     item["question"] for item in findings
