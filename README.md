@@ -5,13 +5,19 @@
 [![Solari Browser + Sandbox](https://img.shields.io/badge/Solari-Browser%20%2B%20Sandbox-F5B301.svg)](https://docs.getsolari.com/)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/marcusmayo/roletruth)
 
-RoleTruth turns job-post URLs, screenshots, and recruiter clarifications into an
-auditable answer to a narrow question: **what does the role actually say?**
+**Evidence-backed job-term reconciliation for one specific opening.**
 
-It is not a candidate scorer or a universal job summarizer. It resolves atomic
-role terms as **Confirmed**, **Conflicted**, or **Unknown**, exposes the exact
-source span behind every accepted conclusion, and labels derived math so a
-scenario cannot masquerade as quoted compensation.
+RoleTruth converts an exact job URL, supporting screenshots, and recruiter
+clarifications into a source-linked decision report for company, role,
+location, work mode, compensation, employment type, duration, experience,
+education, application materials, and deadline.
+
+It is not a browser-reachability benchmark, candidate scorer, or generic job
+summarizer. Browser capture is an acquisition step. The product is the
+deterministic evidence gate that admits only identity-matched,
+integrity-verified quotes; marks compatible claims **Confirmed**,
+contradictions **Conflicted**, missing facts **Unknown**, and formulas
+**Calculated**.
 
 ## The hiring use case
 
@@ -30,9 +36,8 @@ span behind each conclusion before investing in an application or interview.
 This repository is also the flagship use case for the hiring challenge that
 motivated it: build a genuine Solari-powered application, make the Browser and
 Sandbox materially necessary, publish the implementation, and demonstrate a
-problem encountered in a real job search. The next human distribution step is
-to publish the required social post and tag the Solari team; the repository
-does not claim that step is complete.
+problem encountered in a real job search. The required LinkedIn and X launch
+posts were published on September 1, 2026 and tagged Harry Chow and Solari.
 
 > The reviewed hiring-post demo works without credentials. A server-side
 > `SOLARI_API_KEY` is required to analyze any new URL or screenshot. A URL-only
@@ -41,6 +46,26 @@ does not claim that step is complete.
 > sealed evidence in a Solari Sandbox.
 
 ![RoleTruth evidence matrix](docs/roletruth-solari-preview.jpg)
+
+## What distinguishes RoleTruth
+
+- **Opening identity comes first.** Stable job IDs and strict company-and-role
+  matching prevent different openings, company profiles, search pages, and
+  duplicate mirrors from contaminating one report.
+- **The output is hiring terms, not an access grade.** RoleTruth resolves
+  location, work mode, compensation, employment type, requirements, deadlines,
+  and application instructions.
+- **Multiple sources produce one reconciled result.** Compatible claims become
+  **Confirmed**; incompatible eligible claims remain visibly **Conflicted**;
+  unsupported terms stay **Unknown**.
+- **Every admitted conclusion has exact-span evidence.** The Sandbox re-hashes
+  sealed artifacts and rejects a proposed claim when its supporting quote is
+  absent.
+- **Candidate-supplied evidence participates under the same rules.** Job-page
+  and recruiter-message screenshots can supplement inaccessible public pages
+  without receiving automatic authority.
+- **Blocked-page handling is a guardrail, not the product.** Access failures
+  remain visible for diagnosis but cannot vote on what a role says.
 
 ## What a live analysis does
 
@@ -111,9 +136,10 @@ terms.
 
 ## Live URL pressure test
 
-The current implementation is intentionally judged on both extraction and
-abstention. A blocked page must not become evidence, while an accessible ATS
-page must produce opening-specific findings rather than a reused fixture.
+These cases test whether the acquisition layer safely supplies evidence to the
+hiring reconciler. RoleTruth does not compare or grade browser configurations.
+A page is either eligible hiring evidence or an excluded source; only usable,
+identity-matched content can affect role terms.
 
 | Input class | Expected behavior | Current verified behavior |
 |---|---|---|
@@ -422,13 +448,16 @@ The full boundary and known gaps are in the
 | Make it usable | Visible Codespaces frontend with URL, screenshot-only, and combined intake | Implemented; public hosted Site intentionally disabled |
 | Prove people want it | Redacted field-test issue template | **Pending real users; no adoption claimed** |
 | Fork the Solari cookbook | This initialized repository is standalone, not marked as a GitHub fork | **Marcus action required** |
-| Post and tag Harry/Solari | LinkedIn or X post | **Marcus action required** |
+| Post and tag Harry/Solari | LinkedIn and X launch posts published September 1, 2026 | Complete |
 
-The public [Solari use-case catalog](https://www.getsolari.com/use-cases) and
-[cookbook](https://github.com/solari-sdk/solari-cookbook) showed no exact
-RoleTruth equivalent when this project was scoped on September 1, 2026. That is
-only a public-overlap check; only the Solari/Pinetree team can confirm there is
-no private-roadmap overlap.
+The public Solari ecosystem now includes
+[browser-reachability observability](https://github.com/dibyo10/agentgate).
+That capability is adjacent to RoleTruth's acquisition diagnostics, but it is
+not the same product: RoleTruth uses browser access only to acquire candidate
+evidence, then applies exact-opening identity, field-level extraction,
+integrity-gated evidence admission, compensation-scenario separation, and
+multi-source hiring-term reconciliation. This is a public-overlap assessment,
+not private-roadmap clearance.
 
 See the [Submission checklist](docs/SUBMISSION_CHECKLIST.md) for the remaining
 human-owned steps.
