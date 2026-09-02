@@ -12,6 +12,8 @@
 - [x] Codespaces configuration and preview command
 - [x] Unit, adversarial URL, render, lint, and production-build verification
 - [x] Threat model, evidence model, limitations, and AI-build disclosure
+- [x] LinkedIn and X launch posts published September 1, 2026 with the required
+      Harry Chow and Solari tags
 
 ## Requires Marcus
 
@@ -23,7 +25,7 @@
       repository is acceptable
 - [ ] Ask Solari whether RoleTruth overlaps anything on the private roadmap
 - [ ] Have at least three external users try the demo and file redacted feedback
-- [ ] Publish the build on LinkedIn or X and tag `@harrychow_` and `@getsolari`
 
-No adoption, live-Solari receipt, private-roadmap clearance, fork status, or
-social post is claimed until the corresponding evidence exists.
+No adoption, live-Solari receipt, private-roadmap clearance, or fork status is
+claimed until the corresponding evidence exists. Social publication is
+owner-attested; direct post URLs have not been added to this repository.
