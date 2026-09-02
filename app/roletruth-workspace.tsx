@@ -347,11 +347,16 @@ export function RoleTruthWorkspace() {
           (finding) => finding.status === "confirmed" || finding.status === "conflicted",
         )?.field ?? hydratedReport.findings[0]?.field ?? "",
       );
-      setView("report");
+      setView(
+        hydratedReport.analysisStatus === "insufficient" && hydratedReport.discovery
+          ? "evidence"
+          : "report",
+      );
       setRunState("complete");
       setLiveStatus(
         hydratedReport.analysisStatus === "insufficient"
-          ? "No exact public match was established. Review the discovery trace or add the role title and a listing screenshot."
+          ? hydratedReport.diagnostics?.[0] ??
+            "No exact public match was established. Review the discovery trace or add the role title and a listing screenshot."
           : hydratedReport.analysisStatus === "partial"
             ? "Partial analysis complete. Usable evidence was reconciled; blocked or irrelevant sources remain visibly excluded."
             : "Evidence analysis complete. Every conclusion is linked to a verified source span.",

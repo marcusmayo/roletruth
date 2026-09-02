@@ -110,6 +110,7 @@ export interface DiscoverySeed {
   roleTitle: string | null;
   companyName: string | null;
   jobId: string | null;
+  pageType: "exact-job" | "search-results" | "company-page" | "unknown";
 }
 
 export interface DiscoveryQuery {
@@ -269,6 +270,26 @@ export function inferRoleFromJobUrl(value: string) {
   return candidate.replace(/\b(?:job|jobs|listing|view)\b/gi, " ").replace(/\s+/g, " ").trim();
 }
 
+export function classifyStartingUrl(value: string) {
+  const parsed = new URL(value);
+  const path = decodeURIComponent(parsed.pathname).toLowerCase();
+  const query = `${parsed.searchParams.get("q") ?? ""} ${parsed.searchParams.get("query") ?? ""}`.trim();
+  if (
+    /\/(?:jobs?|careers?)\/(?:search|results?)(?:\/|$)/.test(path) ||
+    /\/(?:search|jobs-search)(?:\/|$)/.test(path) ||
+    (query && !extractStableJobId(value) && !inferRoleFromJobUrl(value))
+  ) {
+    return "search-results" as const;
+  }
+  if (/\b(?:overview|company|working-at|employers?)\b/.test(path)) {
+    return "company-page" as const;
+  }
+  if (extractStableJobId(value) || inferRoleFromJobUrl(value)) {
+    return "exact-job" as const;
+  }
+  return "unknown" as const;
+}
+
 export function buildDiscoverySeed(captures: LiveCaptureData[]): DiscoverySeed {
   const submitted = captures.find(
     (capture) => capture.kind === "url" && capture.requestedUrl,
@@ -291,10 +312,14 @@ export function buildDiscoverySeed(captures: LiveCaptureData[]): DiscoverySeed {
     roleTitle: roleTitle || null,
     companyName,
     jobId: extractStableJobId(safeStartingUrl),
+    pageType: classifyStartingUrl(submitted.requestedUrl),
   };
 }
 
 export function buildDiscoveryQueries(seed: DiscoverySeed) {
+  if (seed.pageType === "search-results" || seed.pageType === "company-page") {
+    return [];
+  }
   const proposals: Array<Omit<DiscoveryQuery, "id">> = [];
   if (seed.jobId) {
     proposals.push({
@@ -393,7 +418,8 @@ export function rankSearchCandidates(
     );
     const strongCompany = Boolean(seed.companyName && companyCoverage >= 0.5);
     const eligibleLead = seed.jobId
-      ? idMatch || (strongRole && strongCompany)
+      ? idMatch ||
+        (strongRole && jobSignal && (strongCompany || !seed.companyName))
       : seed.roleTitle && seed.companyName
         ? strongRole && strongCompany
         : seed.roleTitle

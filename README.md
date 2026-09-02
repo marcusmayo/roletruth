@@ -211,7 +211,12 @@ rules.
 5. For a URL-only run, enter the exact job-post URL and select **Search &
    reconcile evidence**. Screenshots are optional. The **Evidence ledger**
    exposes every query, screened/captured count, discovered source, identity
-   match, and exclusion reason.
+   match, and exclusion reason. RoleTruth distinguishes a specific opening
+   from a search-results page or company profile. Non-specific URLs receive
+   corrective guidance instead of being broadened into unrelated openings. If
+   the starting page is blocked, tightly matching job-page leads may be
+   captured, but they must still pass the post-capture same-opening identity
+   gate before any claim can vote.
 6. For a combined run, enter the actual job-post URL, add supporting
    screenshots, and select **Search & reconcile evidence** once.
 

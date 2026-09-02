@@ -1014,9 +1014,61 @@ test("a company overview never broadens discovery into unrelated openings", asyn
   assert.equal(seed.roleTitle, null);
   assert.equal(seed.jobId, null);
   assert.equal(seed.companyName, "NIFCO America Corp");
-  assert.equal(queries.length, 1);
-  assert.match(queries[0].query, /glassdoor\.com\/Overview/);
-  assert.doesNotMatch(queries[0].query, /^"NIFCO America Corp" job$/);
+  assert.equal(seed.pageType, "company-page");
+  assert.equal(queries.length, 0);
+});
+
+test("Deloitte exact job URL admits same-title job pages before identity gating", async () => {
+  const { discovery } = await pipelineModules();
+  const capture = usableCapture("406 Not Acceptable", {
+    requestedUrl:
+      "https://apply.deloitte.com/en_US/careers/JobDetail/Associate-AI-Solution-Architect/365262",
+    finalUrl:
+      "https://apply.deloitte.com/en_US/careers/JobDetail/Associate-AI-Solution-Architect/365262",
+    acquisitionStatus: "blocked",
+    documentType: "blocked_page",
+    eligibleForRoleTerms: false,
+    candidateAssertions: [],
+  });
+  const seed = discovery.buildDiscoverySeed([capture]);
+  const ranked = discovery.rankSearchCandidates(
+    [
+      {
+        href: "https://jobs.example.org/jobs/deloitte/associate-ai-solution-architect",
+        title: "Associate AI Solution Architect | Deloitte",
+        snippet: "Deloitte is hiring an Associate AI Solution Architect.",
+      },
+      {
+        href: "https://jobs.example.org/jobs/deloitte/lead-ai-solution-architect",
+        title: "Lead AI Solution Architect | Deloitte",
+        snippet: "Deloitte is hiring a Lead AI Solution Architect.",
+      },
+    ],
+    "Q03",
+    seed,
+    [seed.startingUrl],
+  );
+
+  assert.equal(seed.pageType, "exact-job");
+  assert.equal(seed.jobId, "365262");
+  assert.equal(seed.roleTitle, "Associate AI Solution Architect");
+  assert.equal(ranked.length, 1);
+  assert.match(ranked[0].url, /associate-ai-solution-architect/);
+});
+
+test("generic Monster search URL is identified before discovery", async () => {
+  const { discovery } = await pipelineModules();
+  const capture = usableCapture("Monster jobs near me", {
+    requestedUrl: "https://www.monster.com/jobs/search?q=jobs+near+me&page=1",
+    finalUrl: "https://www.monster.com/jobs/search?q=jobs+near+me&page=1",
+    acquisitionStatus: "blocked",
+    eligibleForRoleTerms: false,
+    candidateAssertions: [],
+  });
+  const seed = discovery.buildDiscoverySeed([capture]);
+  assert.equal(seed.pageType, "search-results");
+  assert.equal(seed.roleTitle, null);
+  assert.equal(discovery.buildDiscoveryQueries(seed).length, 0);
 });
 
 test("search candidates must match the same role and company before capture", async () => {

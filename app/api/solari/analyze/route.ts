@@ -603,9 +603,26 @@ export async function POST(request: Request) {
             source.acquisitionStatus ?? "",
           ),
       );
-      if (submittedBlocked && discoveredUsable > 0) {
+      const seedPageType = buildDiscoverySeed(captures).pageType;
+      const searchSummary = `${discovery.queries.length} search quer${discovery.queries.length === 1 ? "y" : "ies"}, ${discovery.candidatesScreened} result${discovery.candidatesScreened === 1 ? "" : "s"} screened, and ${discovery.candidatesCaptured} candidate page${discovery.candidatesCaptured === 1 ? "" : "s"} captured`;
+      if (seedPageType === "search-results") {
+        report.diagnostics = [
+          "This URL is a job search-results page, not one opening. Open a specific job and paste that listing URL.",
+          ...(report.diagnostics ?? []),
+        ];
+      } else if (seedPageType === "company-page") {
+        report.diagnostics = [
+          "This URL is a company profile, not one opening. Paste the URL for a specific job listing.",
+          ...(report.diagnostics ?? []),
+        ];
+      } else if (submittedBlocked && discoveredUsable > 0) {
         report.diagnostics = [
           `Starting URL was unavailable; discovery continued and captured ${discoveredUsable} usable alternate source${discoveredUsable === 1 ? "" : "s"}.`,
+          ...(report.diagnostics ?? []),
+        ];
+      } else if (submittedBlocked && discoveredUsable === 0) {
+        report.diagnostics = [
+          `The starting job page was unavailable. RoleTruth completed ${searchSummary}, but no captured page passed the same-opening identity gate. Open Evidence ledger for the discovery trace.`,
           ...(report.diagnostics ?? []),
         ];
       } else if (
