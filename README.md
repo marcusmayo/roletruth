@@ -13,6 +13,27 @@ role terms as **Confirmed**, **Conflicted**, or **Unknown**, exposes the exact
 source span behind every accepted conclusion, and labels derived math so a
 scenario cannot masquerade as quoted compensation.
 
+## The hiring use case
+
+Candidates routinely make consequential decisions from information scattered
+across an employer posting, an ATS mirror, recruiter messages, social posts,
+and screenshots. Those sources can disagree about work location, employment
+type, compensation, experience, deadlines, or what must be submitted. A normal
+summary hides that uncertainty; RoleTruth preserves it.
+
+Paste the exact opening URL and RoleTruth acquires the page, searches for
+identity-matched public copies when necessary, extracts atomic claims, and
+reconciles every eligible source into a decision report. A candidate can see
+what is confirmed, what conflicts, what remains unknown, and the exact captured
+span behind each conclusion before investing in an application or interview.
+
+This repository is also the flagship use case for the hiring challenge that
+motivated it: build a genuine Solari-powered application, make the Browser and
+Sandbox materially necessary, publish the implementation, and demonstrate a
+problem encountered in a real job search. The next human distribution step is
+to publish the required social post and tag the Solari team; the repository
+does not claim that step is complete.
+
 > The reviewed hiring-post demo works without credentials. A server-side
 > `SOLARI_API_KEY` is required to analyze any new URL or screenshot. A URL-only
 > run uses a recorded Solari Browser to search for matching public sources,
@@ -82,9 +103,30 @@ RoleTruth does not treat every rendered page as job evidence.
 | **Unreadable** | The page or OCR output did not contain enough readable text | Excluded and surfaced for replacement |
 | **Failed** | Browser acquisition, OCR, or integrity verification failed | Excluded with a diagnostic |
 
-A report is labeled **complete** only when every supplied source is usable,
-**partial** when usable evidence is reconciled alongside excluded sources, and
-**insufficient** when no usable source supplies role terms.
+A report is labeled **complete** only when every tracked decision field is
+resolved and no source or field conflict remains, **partial** when at least one
+usable source yields findings but some tracked fields remain unknown or a
+source is excluded, and **insufficient** when no usable source supplies role
+terms.
+
+## Live URL pressure test
+
+The current implementation is intentionally judged on both extraction and
+abstention. A blocked page must not become evidence, while an accessible ATS
+page must produce opening-specific findings rather than a reused fixture.
+
+| Input class | Expected behavior | Current verified behavior |
+|---|---|---|
+| Trivium Packaging direct ATS opening | Capture and populate opening-specific fields | Confirms company, role, on-site mode, Youngstown location, permanent employment, 5+ years, degree requirement, and apply-online path; unresolved fields remain Unknown |
+| MAPFRE direct opening | Capture only claims explicitly present | Confirms company, role, and location; the title slug is not mislabeled as a requisition ID |
+| Deloitte defended opening | Search for the same opening, but never accept an HTTP error page | HTTP 406 receipt remains visible and excluded; report abstains unless an identity-matched public copy or screenshot is captured |
+| LinkedIn URL with `currentJobId` | Treat as a specific opening and use the stable ID for bounded discovery | `currentJobId` is preserved as opening identity; a sign-in redirect is excluded rather than summarized |
+| Generic search-results or company page | Do not merge arbitrary jobs | Rejected with corrective guidance; unrelated openings cannot vote |
+
+These outcomes are not a claim of universal web extraction. Bot defenses and
+authentication walls can prevent automated capture. In those cases, an actual
+listing screenshot or accessible public mirror is required, and RoleTruth
+surfaces that limitation instead of fabricating a result.
 
 ## Judge the reviewed demo in 90 seconds
 

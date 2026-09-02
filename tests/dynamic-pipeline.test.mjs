@@ -362,7 +362,7 @@ test("generic extractor distinguishes company-wide remote employees from an onsi
 
   assert.ok(workMode);
   assert.equal(workMode.normalizedValue, "onsite");
-  assert.equal(workMode.displayValue, "Onsite");
+  assert.equal(workMode.displayValue, "On-site");
   assert.equal(
     assertions.some(
       (item) => item.field === "work_mode" && item.normalizedValue === "remote",
@@ -489,16 +489,28 @@ test("Trivium ATS labels take precedence over keywords embedded in labels", asyn
     "onsite",
   );
   assert.equal(
+    assertionByField(assertions, "work_mode")?.displayValue,
+    "On-site",
+  );
+  assert.equal(
     assertionByField(assertions, "employment_type")?.normalizedValue,
     "permanent",
   );
   assert.equal(
+    assertionByField(assertions, "employment_type")?.displayValue,
+    "Permanent",
+  );
+  assert.equal(
     assertionByField(assertions, "experience_required")?.displayValue,
-    "5 years experience",
+    "5+ years experience",
   );
   assert.equal(
     assertionByField(assertions, "education_required")?.displayValue,
     "Degree in Business Management or Computer Science",
+  );
+  assert.equal(
+    assertionByField(assertions, "application_steps")?.displayValue,
+    "Apply online",
   );
 });
 
@@ -1049,6 +1061,32 @@ test("URL-only discovery strips secrets while preserving a stable job ID", async
   assert.equal(parsed.searchParams.has("candidate_email"), false);
   assert.equal(parsed.hash, "");
   assert.equal(discovery.extractStableJobId(sanitized), "884211");
+});
+
+test("URL identity normalizes ATS IDs and recognizes LinkedIn currentJobId", async () => {
+  const { discovery } = await pipelineModules();
+  const trivium =
+    "https://careers.triviumpackaging.com/job/IT-Business-Analyst/39602-en_US";
+  const linkedin =
+    "https://www.linkedin.com/jobs/search-results/?currentJobId=4376210856&origin=JOB_SEARCH_PAGE_JOB_FILTER";
+
+  assert.equal(discovery.extractStableJobId(trivium), "39602");
+  assert.equal(discovery.classifyStartingUrl(trivium), "exact-job");
+  assert.equal(discovery.extractStableJobId(linkedin), "4376210856");
+  assert.equal(discovery.classifyStartingUrl(linkedin), "exact-job");
+  assert.equal(
+    discovery.classifyStartingUrl("https://www.linkedin.com/jobs/search-results/"),
+    "search-results",
+  );
+});
+
+test("a title slug is not mislabeled when a numeric ATS job ID is present", async () => {
+  const { discovery } = await pipelineModules();
+  const mapfre =
+    "https://jobs.mapfre.com/job/Columbus-Senior-Territory-Sales-Manager-OH-43085/106316742/";
+
+  assert.equal(discovery.extractStableJobId(mapfre), "106316742");
+  assert.equal(discovery.classifyStartingUrl(mapfre), "exact-job");
 });
 
 test("a company overview never broadens discovery into unrelated openings", async () => {

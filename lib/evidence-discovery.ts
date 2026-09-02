@@ -30,6 +30,7 @@ const KNOWN_JOB_HOST_MARKERS = [
 ];
 
 const STABLE_JOB_ID_KEYS = new Set([
+  "currentjobid",
   "gh_jid",
   "id",
   "job",
@@ -224,10 +225,17 @@ export function extractStableJobId(value: string) {
       return raw;
     }
   }
+  const segments = decodeURIComponent(parsed.pathname)
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.replace(/-[a-z]{2}_[a-z]{2}$/i, ""));
+  const numericSegment = [...segments]
+    .reverse()
+    .find((segment) => /^\d{4,20}$/.test(segment));
+  if (numericSegment) return numericSegment;
+
   const pathMatches = [
-    /\b(?:jobs?|positions?|requisitions?|req)[\/_-]([a-z0-9_-]{5,80})/i,
-    /\b(?:view|listing)[\/_-]([a-z0-9_-]{5,80})/i,
-    /\b([a-z]{0,4}\d{5,}[a-z0-9_-]*)\b/i,
+    /\b(?:requisitions?|req|view|listing)[\/_-]([a-z]{0,6}\d{4,20})\b/i,
   ];
   for (const pattern of pathMatches) {
     const match = pattern.exec(decodeURIComponent(parsed.pathname));
@@ -274,8 +282,11 @@ export function classifyStartingUrl(value: string) {
   const parsed = new URL(value);
   const path = decodeURIComponent(parsed.pathname).toLowerCase();
   const query = `${parsed.searchParams.get("q") ?? ""} ${parsed.searchParams.get("query") ?? ""}`.trim();
+  if (extractStableJobId(value) || inferRoleFromJobUrl(value)) {
+    return "exact-job" as const;
+  }
   if (
-    /\/(?:jobs?|careers?)\/(?:search|results?)(?:\/|$)/.test(path) ||
+    /\/(?:jobs?|careers?)\/(?:search(?:-results?)?|results?)(?:\/|$)/.test(path) ||
     /\/(?:search|jobs-search)(?:\/|$)/.test(path) ||
     (query && !extractStableJobId(value) && !inferRoleFromJobUrl(value))
   ) {
@@ -283,9 +294,6 @@ export function classifyStartingUrl(value: string) {
   }
   if (/\b(?:overview|company|working-at|employers?)\b/.test(path)) {
     return "company-page" as const;
-  }
-  if (extractStableJobId(value) || inferRoleFromJobUrl(value)) {
-    return "exact-job" as const;
   }
   return "unknown" as const;
 }

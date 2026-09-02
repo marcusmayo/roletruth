@@ -577,7 +577,7 @@ export function extractJobCandidates(capture: LiveCaptureData) {
             : "onsite";
       const display = labeledValue
         ? normalized === "onsite"
-          ? "Onsite"
+          ? "On-site"
           : normalized === "hybrid"
             ? "Hybrid"
             : "Remote"
@@ -589,7 +589,7 @@ export function extractJobCandidates(capture: LiveCaptureData) {
           ? "Not remote"
           : remote
             ? "Remote"
-            : "Onsite";
+            : "On-site";
       addFromMatch(
         candidates,
         text,
@@ -723,8 +723,11 @@ export function extractJobCandidates(capture: LiveCaptureData) {
           : "1099"
         : undefined;
       const employmentKind = compact(employment[2]).toLowerCase();
+      const displayKind = classification
+        ? employmentKind
+        : `${employmentKind.charAt(0).toUpperCase()}${employmentKind.slice(1)}`;
       const display = compact(
-        [classification, employmentKind].filter(Boolean).join(" "),
+        [classification, displayKind].filter(Boolean).join(" "),
       );
       addFromMatch(
         candidates,
@@ -753,7 +756,8 @@ export function extractJobCandidates(capture: LiveCaptureData) {
   const experience = experiencePrefix ?? experienceSuffix ?? experienceSection;
   if (experience) {
     const amount = numberFrom(experience[2]);
-    const display = `${amount} years experience`;
+    const hasPlus = /(?:\+\s*\d|\d\s*\+)/.test(experience[1]);
+    const display = `${amount}${hasPlus ? "+" : ""} years experience`;
     addFromMatch(
       candidates,
       text,
@@ -806,6 +810,22 @@ export function extractJobCandidates(capture: LiveCaptureData) {
         materials[0],
         noResume ? "resume-not-required" : "application-materials-requested",
         noResume ? "Résumé/CV not required" : "Application materials requested",
+        "Rendered text",
+      );
+    }
+  }
+
+  if (!candidates.some((item) => item.field === "application_steps")) {
+    const applyOnline = /(?:^|\n)\s*(APPLY NOW|Apply online)\s*(?:\n|$)/im.exec(text);
+    if (applyOnline) {
+      addFromMatch(
+        candidates,
+        text,
+        applyOnline,
+        "application_steps",
+        applyOnline[1],
+        "apply-online",
+        "Apply online",
         "Rendered text",
       );
     }

@@ -64,6 +64,11 @@ function shortHash(hash: string) {
   return hash.length > 18 ? `${hash.slice(0, 10)}…${hash.slice(-6)}` : hash;
 }
 
+function compactEvidenceQuote(value: string) {
+  const compacted = value.replace(/\s+/g, " ").trim();
+  return compacted.length > 240 ? `${compacted.slice(0, 237)}…` : compacted;
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -978,7 +983,9 @@ export function RoleTruthWorkspace() {
                         </p>
                       ))}
                       {sourceEvidence.map((span) => (
-                        <blockquote key={span.id}>“{span.quote}”</blockquote>
+                        <blockquote key={span.id} title={span.quote}>
+                          “{compactEvidenceQuote(span.quote)}”
+                        </blockquote>
                       ))}
                     </div>
                   </article>
