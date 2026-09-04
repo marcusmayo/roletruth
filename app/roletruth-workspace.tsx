@@ -229,10 +229,17 @@ export function RoleTruthWorkspace() {
     },
     { confirmed: 0, conflicted: 0, unknown: 0, calculated: 0 },
   );
-  const unsupported = report.findings.filter(
-    (finding) =>
-      finding.status === "confirmed" && finding.evidenceIds.length === 0,
-  ).length;
+  const verification = report.verification ?? {
+    proposed: report.assertions.length,
+    admitted: report.assertions.length,
+    rejected: 0,
+    rejectionReasons: {
+      malformed: 0,
+      ineligibleSource: 0,
+      quoteNotFound: 0,
+      valueInconsistent: 0,
+    },
+  };
 
   function resetDemo() {
     runGeneration.current += 1;
@@ -744,8 +751,10 @@ export function RoleTruthWorkspace() {
             <div className="rt-integrity-seal">
               <ShieldCheck aria-hidden="true" size={23} />
               <span>
-                <strong>{unsupported}</strong>
-                unsupported claims
+                <strong>
+                  {verification.admitted}/{verification.proposed}
+                </strong>
+                evidence spans admitted
               </span>
             </div>
           </header>
@@ -843,6 +852,59 @@ export function RoleTruthWorkspace() {
 
           {view === "evidence" && (
             <div className="rt-ledger">
+              <section
+                className="rt-verification-audit"
+                aria-labelledby="verification-audit-title"
+              >
+                <div className="rt-verification-audit__header">
+                  <div>
+                    <div className="rt-kicker">Deterministic provenance</div>
+                    <h3 id="verification-audit-title">
+                      Evidence admission audit
+                    </h3>
+                  </div>
+                  <span>
+                    {verification.admitted} admitted · {verification.rejected}{" "}
+                    rejected
+                  </span>
+                </div>
+                <p>
+                  A proposal can affect a finding only when its source is
+                  eligible, its sealed receipt re-hashes correctly, its quote
+                  is a byte-exact substring, and its normalized value agrees
+                  with that quote.
+                </p>
+                <dl>
+                  <div>
+                    <dt>Proposed</dt>
+                    <dd>{verification.proposed}</dd>
+                  </div>
+                  <div>
+                    <dt>Admitted</dt>
+                    <dd>{verification.admitted}</dd>
+                  </div>
+                  <div>
+                    <dt>Rejected</dt>
+                    <dd>{verification.rejected}</dd>
+                  </div>
+                  <div>
+                    <dt>Ineligible source</dt>
+                    <dd>{verification.rejectionReasons.ineligibleSource}</dd>
+                  </div>
+                  <div>
+                    <dt>Quote not found</dt>
+                    <dd>{verification.rejectionReasons.quoteNotFound}</dd>
+                  </div>
+                  <div>
+                    <dt>Value mismatch</dt>
+                    <dd>{verification.rejectionReasons.valueInconsistent}</dd>
+                  </div>
+                  <div>
+                    <dt>Malformed</dt>
+                    <dd>{verification.rejectionReasons.malformed}</dd>
+                  </div>
+                </dl>
+              </section>
               {report.discovery && (
                 <section className="rt-discovery-trace" aria-labelledby="discovery-trace-title">
                   <div className="rt-discovery-trace__header">
@@ -940,6 +1002,16 @@ export function RoleTruthWorkspace() {
                           <dt>Eligible spans</dt>
                           <dd>{sourceEvidence.length}</dd>
                         </div>
+                        {source.verification && (
+                          <div>
+                            <dt>Admission audit</dt>
+                            <dd>
+                              {source.verification.admitted}/
+                              {source.verification.proposed} admitted ·{" "}
+                              {source.verification.rejected} rejected
+                            </dd>
+                          </div>
+                        )}
                         {typeof source.ocrConfidence === "number" && (
                           <div>
                             <dt>OCR confidence</dt>

@@ -65,6 +65,9 @@ test("no confirmed finding is allowed without linked evidence", async () => {
     (finding) => finding.status === "confirmed" && finding.evidenceIds.length === 0,
   );
   assert.deepEqual(invalid, []);
+  assert.equal(report.verification.proposed, report.assertions.length);
+  assert.equal(report.verification.admitted, report.assertions.length);
+  assert.equal(report.verification.rejected, 0);
 });
 
 test("calculation is labeled as a scenario rather than quoted compensation", async () => {

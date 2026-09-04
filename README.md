@@ -5,7 +5,7 @@
 [![Solari Browser + Sandbox](https://img.shields.io/badge/Solari-Browser%20%2B%20Sandbox-F5B301.svg)](https://docs.getsolari.com/)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/marcusmayo/roletruth)
 
-**Evidence-backed job-term reconciliation for one specific opening.**
+**Decision-grade job intelligence for one exact opening.**
 
 RoleTruth converts an exact job URL, supporting screenshots, and recruiter
 clarifications into a source-linked decision report for company, role,
@@ -61,6 +61,9 @@ posts were published on September 1, 2026 and tagged Harry Chow and Solari.
 - **Every admitted conclusion has exact-span evidence.** The Sandbox re-hashes
   sealed artifacts and rejects a proposed claim when its supporting quote is
   absent.
+- **Evidence admission is measurable.** Every live report publishes proposed,
+  admitted, and rejected span counts plus reason buckets for ineligible
+  sources, byte-missing quotes, value mismatches, and malformed proposals.
 - **Candidate-supplied evidence participates under the same rules.** Job-page
   and recruiter-message screenshots can supplement inaccessible public pages
   without receiving automatic authority.
@@ -458,6 +461,24 @@ evidence, then applies exact-opening identity, field-level extraction,
 integrity-gated evidence admission, compensation-scenario separation, and
 multi-source hiring-term reconciliation. This is a public-overlap assessment,
 not private-roadmap clearance.
+
+It also includes
+[Receipts](https://github.com/KristianKrattiger/receipts), a general vendor
+due-diligence ledger that compares first-party claims with independent public
+sources. Its provenance-first design is adjacent to RoleTruth's reconciliation
+mechanics, but the decision product is different. RoleTruth begins with one
+opening's stable job identity, applies ATS-aware field extraction, and resolves
+the hiring terms a candidate must act on: role, location, work mode,
+compensation, engagement, requirements, application steps, and deadline.
+
+| Product boundary | RoleTruth | General claim ledger |
+|---|---|---|
+| Subject identity | Exact job ID or strict role-and-company match | Vendor or topic |
+| Input | Job URL, ATS mirror, recruiter clarification, screenshot | First- and third-party public pages |
+| Decision schema | Hiring terms and candidate follow-up questions | Open-ended claims and counterclaims |
+| Contamination control | Rejects search pages, company profiles, other openings, and duplicate mirrors | Query relevance and source independence |
+| Outcome | Confirmed, Conflicted, Unknown, or Calculated job terms | Corroborated, divergent, or unverified claims |
+| Provenance audit | Exact substring, sealed hashes, admission/rejection counts, reason buckets | Exact substring and admission denials |
 
 See the [Submission checklist](docs/SUBMISSION_CHECKLIST.md) for the remaining
 human-owned steps.

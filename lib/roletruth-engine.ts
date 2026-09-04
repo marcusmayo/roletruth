@@ -69,7 +69,24 @@ export interface EvidenceSource {
   discoveredVia?: string;
   searchRank?: number;
   identityMatch?: IdentityMatch;
+  verification?: {
+    proposed: number;
+    admitted: number;
+    rejected: number;
+  };
   synthetic?: boolean;
+}
+
+export interface EvidenceVerificationSummary {
+  proposed: number;
+  admitted: number;
+  rejected: number;
+  rejectionReasons: {
+    malformed: number;
+    ineligibleSource: number;
+    quoteNotFound: number;
+    valueInconsistent: number;
+  };
 }
 
 export interface DiscoveryQueryTrace {
@@ -171,6 +188,7 @@ export interface RoleTruthReport {
   };
   diagnostics?: string[];
   discovery?: DiscoveryTrace;
+  verification?: EvidenceVerificationSummary;
   runtime: {
     browserSessionId: string | null;
     sandboxId: string | null;
@@ -449,6 +467,17 @@ export function buildReport(
       companyName: "Pinetree Research",
     },
     diagnostics: [],
+    verification: {
+      proposed: assertions.length,
+      admitted: assertions.length,
+      rejected: 0,
+      rejectionReasons: {
+        malformed: 0,
+        ineligibleSource: 0,
+        quoteNotFound: 0,
+        valueInconsistent: 0,
+      },
+    },
     runtime: {
       browserSessionId: null,
       sandboxId: null,
@@ -480,6 +509,7 @@ export function canonicalReport(report: RoleTruthReport) {
         query: query.query,
         provider: query.provider,
       })) ?? [],
+    verification: report.verification ?? null,
     findings: report.findings.map((finding) => ({
       field: finding.field,
       status: finding.status,

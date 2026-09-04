@@ -27,5 +27,6 @@ test("production worker renders the RoleTruth working surface", async () => {
   assert.match(html, /RoleTruth/);
   assert.match(html, /What does the role actually say\?/);
   assert.match(html, /Claim matrix/);
+  assert.match(html, /evidence spans admitted/);
   assert.doesNotMatch(html, /Starter Project/);
 });

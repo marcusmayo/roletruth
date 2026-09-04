@@ -829,6 +829,10 @@ test("Sandbox reconciler cannot promote assertions from a blocked challenge page
   assert.equal(report.sources[0].eligibleForRoleTerms, false);
   assert.deepEqual(report.assertions, []);
   assert.deepEqual(report.evidence, []);
+  assert.equal(report.verification.proposed, 2);
+  assert.equal(report.verification.admitted, 0);
+  assert.equal(report.verification.rejected, 2);
+  assert.equal(report.verification.rejectionReasons.ineligibleSource, 2);
   assert.equal(
     report.findings.find((finding) => finding.field === "role_title").status,
     "unknown",
@@ -952,10 +956,34 @@ test("Sandbox verifier rejects a source-backed quote whose proposed value contra
   assert.equal(workMode.evidenceIds.length, 0);
   assert.deepEqual(report.assertions, []);
   assert.deepEqual(report.evidence, []);
+  assert.equal(report.verification.proposed, 1);
+  assert.equal(report.verification.admitted, 0);
+  assert.equal(report.verification.rejected, 1);
+  assert.equal(report.verification.rejectionReasons.valueInconsistent, 1);
   assert.match(
     report.diagnostics.join(" "),
     /value|semantic|contradict|unsupported/i,
   );
+});
+
+test("Sandbox verifier publishes a byte-missing quote rejection without admitting it", async () => {
+  const { reconcile } = await pipelineModules();
+  const report = await runReconciler(reconcile.SOLARI_RECONCILE_SCRIPT, [
+    {
+      sealedText: "Work mode: Onsite",
+      candidateAssertions: [
+        candidate("work_mode", "Work mode: Remote", "remote", "Remote"),
+      ],
+    },
+  ]);
+
+  assert.deepEqual(report.assertions, []);
+  assert.deepEqual(report.evidence, []);
+  assert.equal(report.verification.proposed, 1);
+  assert.equal(report.verification.admitted, 0);
+  assert.equal(report.verification.rejected, 1);
+  assert.equal(report.verification.rejectionReasons.quoteNotFound, 1);
+  assert.equal(report.sources[0].verification.rejected, 1);
 });
 
 test("TypeScript extraction and Sandbox verification agree on common remote exclusions", async (t) => {

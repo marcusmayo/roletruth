@@ -50,6 +50,17 @@ sources = []
 evidence = []
 assertions = []
 diagnostics = []
+verification = {
+    "proposed": 0,
+    "admitted": 0,
+    "rejected": 0,
+    "rejectionReasons": {
+        "malformed": 0,
+        "ineligibleSource": 0,
+        "quoteNotFound": 0,
+        "valueInconsistent": 0,
+    },
+}
 
 def compact(value):
     return re.sub(r"\s+", " ", str(value)).strip()
@@ -144,6 +155,11 @@ for index, capture in enumerate(captures, start=1):
         "discoveredVia": capture.get("discoveredVia"),
         "searchRank": capture.get("searchRank"),
         "identityMatch": capture.get("identityMatch"),
+        "verification": {
+            "proposed": len(capture.get("candidateAssertions", [])),
+            "admitted": 0,
+            "rejected": 0,
+        },
     }
     if capture.get("requestedUrl"):
         source["requestedUrl"] = capture["requestedUrl"]
@@ -153,6 +169,7 @@ for index, capture in enumerate(captures, start=1):
     sources.append(source)
 
     for candidate_index, candidate in enumerate(capture.get("candidateAssertions", []), start=1):
+        verification["proposed"] += 1
         field = candidate.get("field")
         quote = candidate.get("quote", "")
         normalized = safe_text(candidate.get("normalizedValue", ""), 180)
@@ -160,14 +177,26 @@ for index, capture in enumerate(captures, start=1):
         raw = safe_text(candidate.get("rawValue", ""), 240)
 
         if field not in ALLOWED_FIELDS or not quote or not normalized or not display:
+            verification["rejected"] += 1
+            verification["rejectionReasons"]["malformed"] += 1
+            source["verification"]["rejected"] += 1
             continue
         company_context = field == "company_name" and document_type == "company_profile" and status == "not_job"
         if not (source["eligibleForRoleTerms"] or company_context):
+            verification["rejected"] += 1
+            verification["rejectionReasons"]["ineligibleSource"] += 1
+            source["verification"]["rejected"] += 1
             continue
         if not integrity_verified or quote not in sealed_text:
+            verification["rejected"] += 1
+            verification["rejectionReasons"]["quoteNotFound"] += 1
+            source["verification"]["rejected"] += 1
             diagnostics.append(f"Rejected unsupported {field} proposal from {source['label']}.")
             continue
         if compact(raw).lower() not in compact(quote).lower() or not candidate_value_is_consistent(field, raw, normalized):
+            verification["rejected"] += 1
+            verification["rejectionReasons"]["valueInconsistent"] += 1
+            source["verification"]["rejected"] += 1
             diagnostics.append(f"Rejected value-inconsistent {field} proposal from {source['label']}.")
             continue
 
@@ -187,6 +216,8 @@ for index, capture in enumerate(captures, start=1):
             "displayValue": display,
             "evidenceId": evidence_id,
         })
+        verification["admitted"] += 1
+        source["verification"]["admitted"] += 1
 
 findings = []
 for field, label, group, unknown_reason in DEFINITIONS:
@@ -259,7 +290,7 @@ source_fingerprint = "".join(sorted(item.get("sha256") or "" for item in sources
 report_suffix = hashlib.sha256(source_fingerprint.encode("utf-8")).hexdigest()[:12]
 report = {
     "id": f"rt-live-{report_suffix}",
-    "engineVersion": "0.3.0-discovery-sandbox",
+    "engineVersion": "0.4.0-evidence-admission-audit",
     "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "mode": "solari-live",
     "analysisStatus": analysis_status,
@@ -268,6 +299,7 @@ report = {
         "companyName": confirmed_value("company_name"),
     },
     "diagnostics": list(dict.fromkeys(diagnostics)),
+    "verification": verification,
     "sources": sources,
     "evidence": evidence,
     "assertions": assertions,
